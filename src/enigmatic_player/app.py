@@ -358,7 +358,7 @@ class EnigmaticApp(App):
             if result:
                 self.notify(f"Saved: {filename}", timeout=3)
 
-        self.run_worker(_do_download, exit=True, callback=_on_done)
+        self.run_worker(_do_download, thread=True, callback=_on_done)
 
     # ------------------------------------------------------------------ polling
     def _poll(self) -> None:
