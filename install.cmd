@@ -36,7 +36,7 @@ if not exist "%VENV_DIR%\Scripts\python.exe" (
 
 echo Installing dependencies...
 "%VENV_DIR%\Scripts\pip.exe" install --upgrade pip -q
-"%VENV_DIR%\Scripts\pip.exe" install -e "%REPO_DIR%" -q
+"%VENV_DIR%\Scripts\pip.exe" install -e "%REPO_DIR%[youtube,art]" -q
 
 REM Create launcher
 if not exist "%BIN_DIR%" mkdir "%BIN_DIR%"
@@ -48,6 +48,10 @@ if not exist "%BIN_DIR%" mkdir "%BIN_DIR%"
     echo REM Auto-update
     echo if exist "%%REPO_DIR%%\.git" ^(
     echo     git -C "%%REPO_DIR%%" pull --ff-only ^>nul 2^>^&1
+    echo     if "%%REPO_DIR%%\pyproject.toml" GTR "%%VENV_DIR%%\.installed" ^(
+    echo         "%%VENV_DIR%%\Scripts\pip.exe" install -e "%%REPO_DIR%%[youtube,art]" -q ^>nul 2^>^&1
+    echo         type nul ^> "%%VENV_DIR%%\.installed"
+    echo     ^)
     echo ^)
     echo.
     echo "%%VENV_DIR%%\Scripts\enigmatic.exe" %%*

@@ -48,7 +48,7 @@ fi
 
 echo "Installing dependencies..."
 "$VENV_DIR/bin/pip" install --upgrade pip -q
-"$VENV_DIR/bin/pip" install -e "$VENV_DIR/.." -q
+"$VENV_DIR/bin/pip" install -e "$VENV_DIR/..[youtube,art]" -q
 
 # Create wrapper
 mkdir -p "$BIN_DIR"
@@ -62,7 +62,7 @@ if [ -d "$REPO_DIR/.git" ]; then
     git -C "$REPO_DIR" pull --ff-only 2>/dev/null || true
     # Reinstall if dependencies changed
     if [ "$REPO_DIR/pyproject.toml" -nt "$VENV_DIR/.installed" ]; then
-        "$VENV_DIR/bin/pip" install -e "$REPO_DIR" -q 2>/dev/null
+        "$VENV_DIR/bin/pip" install -e "$REPO_DIR[youtube,art]" -q 2>/dev/null
         touch "$VENV_DIR/.installed"
     fi
 fi

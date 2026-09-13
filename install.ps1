@@ -34,7 +34,7 @@ if (-not (Test-Path "$VenvDir\Scripts\python.exe")) {
 
 Write-Host "Installing dependencies..."
 & "$VenvDir\Scripts\pip.exe" install --upgrade pip -q
-& "$VenvDir\Scripts\pip.exe" install -e $RepoDir -q
+& "$VenvDir\Scripts\pip.exe" install -e "$RepoDir[youtube,art]" -q
 
 # Create launcher
 if (-not (Test-Path $BinDir)) { New-Item -ItemType Directory -Path $BinDir -Force | Out-Null }
@@ -48,7 +48,7 @@ REM Auto-update
 if exist "%REPO_DIR%\.git" (
     git -C "%REPO_DIR%" pull --ff-only >nul 2>&1
     if "%REPO_DIR%\pyproject.toml" GTR "%VENV_DIR%\.installed" (
-        "%VENV_DIR%\Scripts\pip.exe" install -e "%REPO_DIR%" -q >nul 2>&1
+        "%VENV_DIR%\Scripts\pip.exe" install -e "%REPO_DIR%[youtube,art]" -q >nul 2>&1
         type nul > "%VENV_DIR%\.installed"
     )
 )
