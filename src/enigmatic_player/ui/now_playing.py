@@ -12,7 +12,7 @@ from textual.reactive import reactive
 from textual.widgets import Button, Label, Static
 
 from ..core.track import Track, fmt_time
-from .art import PLACEHOLDER, render_gameboy
+from .art import PLACEHOLDER, random_placeholder, render_gameboy
 from .slider import Slider
 
 MUSIC_NOTE = "♫"
@@ -58,7 +58,7 @@ class ArtDisplay(Static):
 
     def show_cover(self, art_bytes: Optional[bytes]) -> None:
         markup = render_gameboy(art_bytes) if art_bytes else None
-        self.update(markup or PLACEHOLDER)
+        self.update(markup or random_placeholder())
 
 
 class Progress(Static):

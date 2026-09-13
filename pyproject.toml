@@ -35,6 +35,7 @@ dev = [
 
 [project.scripts]
 enigmatic = "enigmatic_player.cli:main"
+epm = "enigmatic_player.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

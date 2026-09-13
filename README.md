@@ -33,9 +33,32 @@ Install mpv: `sudo apt install mpv` · `brew install mpv` · `winget install mpv
 
 ## Install
 
+### One-liner (requires Python 3.10+ and mpv)
+
+**Linux / macOS:**
 ```bash
-pip install -e ".[youtube,art]"   # from this directory
-# or just:  pip install -e .
+curl -fsSL https://raw.githubusercontent.com/lmdelm-dev/music-player/main/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/lmdelm-dev/music-player/main/install.ps1 | iex
+```
+
+**Windows (cmd):**
+```cmd
+curl -fsSL https://raw.githubusercontent.com/lmdelm-dev/music-player/main/install.cmd | cmd
+```
+
+Then launch with:
+```bash
+epm          # or: enigmatic
+```
+
+### Manual (pip)
+
+```bash
+pip install "git+https://github.com/lmdelm-dev/music-player.git"
 ```
 
 Optional extras:
