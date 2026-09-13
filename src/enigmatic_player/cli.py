@@ -92,28 +92,33 @@ def _cmd_play(target: str, shuffle: bool = False) -> int:
         print("mpv is required for playback. Install it first.", file=sys.stderr)
         return 1
 
-    target = Path(target).expanduser()
     args = [mpv, "--no-video", "--force-window=no", "--terminal=no"]
 
     files: list[str] = []
-    if target.is_dir():
-        files = sorted(
-            str(p) for p in target.rglob("*") if p.suffix.lower() in AUDIO_EXTS
-        )
-        if not files:
-            print(f"No audio files found under {target}", file=sys.stderr)
-            return 1
-        if shuffle:
-            import random
-
-            random.shuffle(files)
-    elif target.exists():
-        files = [str(target)]
-    else:
-        # assume a URL (youtube / generic stream)
+    if "://" in target:
+        # A URL is not a filesystem path: Path would collapse its double slash.
         files = [target]
+    else:
+        path = Path(target).expanduser().resolve()
+        if path.is_dir():
+            files = sorted(
+                str(p) for p in path.rglob("*")
+                if p.is_file() and p.suffix.lower() in AUDIO_EXTS
+            )
+            if not files:
+                print(f"No audio files found under {path}", file=sys.stderr)
+                return 1
+            if shuffle:
+                import random
 
-    args.extend(files)
+                random.shuffle(files)
+        elif path.is_file():
+            files = [str(path)]
+        else:
+            print(f"File not found: {path}", file=sys.stderr)
+            return 1
+
+    args.extend(["--", *files])
     print(f"♪ Enigmatic: playing {len(files)} track(s) ♪")
     try:
         return subprocess.call(args)

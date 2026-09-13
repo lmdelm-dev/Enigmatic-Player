@@ -45,16 +45,22 @@ Optional extras:
 | `art` | `pillow` (Game Boy cover rendering) |
 | `dev` | `pytest`, `ruff` |
 
-### One-click scripts
+### Install helpers
+
+Run these from your downloaded or cloned checkout. The helpers install the
+`youtube` and `art` extras into the active virtual environment, or create
+`.venv` in the checkout if none is active. They require Python 3.10+ and mpv.
 
 Linux/macOS:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/you/enigmatic-player/main/install.sh | bash
+bash install.sh
+source .venv/bin/activate  # unless an existing environment was used
 ```
 
 Windows (PowerShell):
 ```powershell
-irm https://raw.githubusercontent.com/you/enigmatic-player/main/install.ps1 | iex
+.\install.ps1
+.\.venv\Scripts\Activate.ps1  # unless an existing environment was used
 ```
 
 ## Usage
@@ -79,9 +85,19 @@ python -m enigmatic_player
 | `x` | shuffle on/off |
 | `r` | repeat on/off |
 | `+` `-` | volume |
+| `h` | focus playlists / leave playlist view |
+| `H` | choose a playlist for the highlighted track |
+| `N` | create playlist |
+| `R` | rename the open playlist |
+| `D` | delete the open playlist |
 | `q` | quit |
 
 The sidebar switches sources (Local / YouTube). For YouTube, type a query in the search bar and press Enter.
+
+Press `H` (or a result's heart button) to choose a saved playlist with the
+arrow keys and Enter; Escape cancels. Open playlists from the sidebar and
+use the remove button to delete individual tracks. Playing a playlist track
+loads that playlist into the playback queue.
 
 ### One-shot CLI
 

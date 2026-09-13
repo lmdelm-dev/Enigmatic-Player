@@ -39,6 +39,9 @@ enigmatic = "enigmatic_player.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+enigmatic_player = ["theme.css"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

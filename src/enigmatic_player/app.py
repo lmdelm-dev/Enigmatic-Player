@@ -18,6 +18,7 @@ from .core.track import Source, Track
 from .providers.manager import ProviderManager
 from .ui.now_playing import NowPlaying
 from .ui.tracklist import (
+    PlaylistListItem,
     PlaylistSidebar,
     PlaylistTrackItem,
     TrackList,
@@ -60,6 +61,40 @@ class PlaylistInputScreen(ModalScreen[str]):
     @on(Button.Pressed, "#btn-create")
     def _create(self) -> None:
         self.dismiss(self.query_one("#playlist-input", Input).value.strip())
+
+
+class PlaylistPickerScreen(ModalScreen[Optional[int]]):
+    """Choose a destination without changing playlists on cancellation."""
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, playlists: List[dict]) -> None:
+        super().__init__()
+        self._playlists = playlists
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label("Add to playlist", classes="dialog-title"),
+            ListView(
+                *(PlaylistListItem(pl, index=i) for i, pl in enumerate(self._playlists)),
+                id="playlist-picker",
+            ),
+            Button("Cancel", id="picker-cancel"),
+            classes="dialog",
+        )
+
+    def on_mount(self) -> None:
+        self.query_one("#playlist-picker", ListView).focus()
+
+    @on(ListView.Selected, "#playlist-picker")
+    def _select(self, event: ListView.Selected) -> None:
+        event.stop()
+        if isinstance(event.item, PlaylistListItem):
+            self.dismiss(event.item.index)
+
+    @on(Button.Pressed, "#picker-cancel")
+    def action_cancel(self) -> None:
+        self.dismiss(None)
 
 
 class EnigmaticApp(App):
@@ -165,6 +200,8 @@ class EnigmaticApp(App):
     async def _load_local(self) -> None:
         self.notify("Scanning local library…", timeout=2)
         tracks: List[Track] = await asyncio.to_thread(self._manager.local.scan)
+        if self._source is not Source.LOCAL or self._playlist_mode or not self.is_mounted:
+            return
         self.query_one("#list-view", TrackList).set_tracks(tracks)
         if len(tracks) == 0:
             self.notify(
@@ -188,9 +225,9 @@ class EnigmaticApp(App):
         # Show playlist tracks in list-view with remove buttons
         list_view = self.query_one("#list-view", TrackList)
         list_view.set_playlist_tracks(playlist, on_remove=self._remove_track_from_current_playlist)
-        # Update UI
-        self.query_one("#btn-queue", Button).label = "▤  Queue"
-        self._queue_mode = False
+        if self._queue_mode:
+            self.action_toggle_queue()
+        list_view.focus_filter()
         self._refresh_playlist_sidebar()
         self.notify(f"Playlist: {playlist['name']}", timeout=2)
 
@@ -212,21 +249,19 @@ class EnigmaticApp(App):
         if not playlists:
             self.notify("No playlists yet. Press N to create one.", timeout=3)
             return
-        # For simplicity, add to first playlist (could add a picker later)
-        # Actually, let's show a simple dialog to pick
-        self._pending_heart_track = track
-        self._show_playlist_picker()
+        def _chosen(index: Optional[int]) -> None:
+            if index is None:
+                return
+            if self._config.add_track_to_playlist(index, self._track_to_dict(track)):
+                self.notify(f"Added to '{playlists[index]['name']}'", timeout=2)
+                self._refresh_playlist_sidebar()
+                if self._playlist_mode and self._current_playlist_index == index:
+                    self.query_one("#list-view", TrackList).set_playlist_tracks(
+                        self._config.playlists[index],
+                        on_remove=self._remove_track_from_current_playlist,
+                    )
 
-    def _show_playlist_picker(self) -> None:
-        """Show a simple picker for which playlist to add to."""
-        playlists = self._config.playlists
-        if not playlists:
-            return
-        # Build a simple list and let user pick with number keys
-        # For now, just add to the first one - user can manage via playlist view
-        self._config.add_track_to_playlist(0, self._track_to_dict(self._pending_heart_track))
-        self.notify(f"Added to '{playlists[0]['name']}'", timeout=2)
-        self._refresh_playlist_sidebar()
+        self.push_screen(PlaylistPickerScreen(playlists), _chosen)
 
     def _remove_track_from_current_playlist(self, track_index: int) -> None:
         if self._current_playlist_index is not None:
@@ -607,6 +642,7 @@ class EnigmaticApp(App):
         if self._playlist_mode:
             self._exit_playlist_mode()
         else:
+            self.query_one("#playlist-list", ListView).focus()
             self.notify("Use ↑/↓ to select playlist, Enter to open", timeout=2)
 
     def action_new_playlist(self) -> None:
@@ -656,11 +692,8 @@ class EnigmaticApp(App):
     @on(ListView.Selected, "#list-view-items")
     def _local_selected(self, event: ListView.Selected) -> None:
         item = event.item
-        # Handle both regular tracks and playlist tracks
-        if isinstance(item, TrackListItem):
+        if isinstance(item, (TrackListItem, PlaylistTrackItem)):
             self._queue_from_active_list()
-            asyncio.create_task(self.play_track(item.track))
-        elif isinstance(item, PlaylistTrackItem):
             asyncio.create_task(self.play_track(item.track))
 
     @on(ListView.Selected, "#queue-view-items")
@@ -668,7 +701,10 @@ class EnigmaticApp(App):
         item = event.item
         if not isinstance(item, TrackListItem):
             return
-        asyncio.create_task(self.play_track(item.track))
+        index = self.query_one("#queue-view", TrackList).index
+        if index is not None:
+            self.queue.jump(index)
+            asyncio.create_task(self.play_track(item.track))
 
     def on_unmount(self) -> None:
         if self.player:

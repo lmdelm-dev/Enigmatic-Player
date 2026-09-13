@@ -8,7 +8,7 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, Label, ListItem, ListView
 
-from ..core.track import Track, fmt_time
+from ..core.track import Source, Track, fmt_time
 
 PROVIDER_ICON = {"local": "◎", "youtube": "▶"}
 GB_INK = "rgb(43,255,150)"
@@ -126,6 +126,11 @@ class TrackList(Vertical):
                 self._list.append(
                     TrackListItem(t, number=i, show_heart=show_heart, on_heart=on_heart)
                 )
+        self.call_after_refresh(self._select_first)
+
+    def _select_first(self) -> None:
+        if self._list is not None:
+            self._list.index = 0 if self._list.children else None
 
     def set_playlist_tracks(
         self,
@@ -144,11 +149,12 @@ class TrackList(Vertical):
                 album=t_data.get("album", ""),
                 duration=float(t_data.get("duration") or 0),
                 uri=t_data.get("uri", ""),
-                provider=t_data.get("provider", "local"),
+                provider=Source(t_data.get("provider") or "local"),
                 track_id=t_data.get("track_id", ""),
                 cover_uri=t_data.get("cover_uri"),
             )
             self._list.append(PlaylistTrackItem(track, index=i, on_remove=on_remove))
+        self.call_after_refresh(self._select_first)
 
     def append_track(self, track: Track) -> None:
         if self._list is None:
@@ -164,7 +170,10 @@ class TrackList(Vertical):
     def items(self) -> List[Track]:
         if self._list is None:
             return []
-        return [c.track for c in self._list.children if isinstance(c, TrackListItem)]
+        return [
+            c.track for c in self._list.children
+            if isinstance(c, (TrackListItem, PlaylistTrackItem))
+        ]
 
     @property
     def index(self) -> Optional[int]:
@@ -175,10 +184,10 @@ class TrackList(Vertical):
         if self._list is None:
             return None
         idx = self._list.index
-        if idx is None:
+        if idx is None or not 0 <= idx < len(self._list.children):
             return None
         child = self._list.children[idx]
-        return child.track if isinstance(child, TrackListItem) else None
+        return child.track if isinstance(child, (TrackListItem, PlaylistTrackItem)) else None
 
     # ---- focus / cursor -----------------------------------------------------------
     def focus_filter(self) -> None:

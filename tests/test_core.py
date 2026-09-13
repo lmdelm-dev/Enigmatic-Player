@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 
 import pytest
 
@@ -8,8 +9,9 @@ from enigmatic_player.core.queue import Queue
 from enigmatic_player.core.track import Source, Track
 
 
-def _app(**kw) -> EnigmaticApp:
-    config = Config(cfg_path="/tmp/opencode/test-config.json")
+def _app(tmp_path, **kw) -> EnigmaticApp:
+    config = Config(cfg_path=tmp_path / "config.json", data_path=tmp_path / "state.json")
+    config.add_library_dir(str(tmp_path))
     return EnigmaticApp(config=config, **kw)
 
 
@@ -66,7 +68,7 @@ def test_config_roundtrip(tmp_path):
     cfg.save()
 
     loaded = Config(cfg_path=tmp_path / "cfg.json", data_path=tmp_path / "state.json")
-    assert loaded.library_dirs == ["/home/syx/Music"]
+    assert loaded.library_dirs == [str(Path.home() / "Music")]
     assert loaded.all["default_provider"] == "youtube"
 
 
@@ -80,7 +82,7 @@ def test_local_scan(tmp_path):
         w.setframerate(8000)
         frame = b"\x00\x00" * 100
         w.writeframes(frame)
-    cfg = Config(cfg_path="/tmp/opencode/test-local-config.json")
+    cfg = Config(cfg_path=tmp_path / "config.json", data_path=tmp_path / "state.json")
     cfg.add_library_dir(str(tmp_path))
     from enigmatic_player.providers.local import LocalProvider
 
@@ -90,10 +92,10 @@ def test_local_scan(tmp_path):
     assert all(prov.resolve_stream(t) is not None for t in tracks)
 
 
-def test_app_smoke():
+def test_app_smoke(tmp_path):
     # The TUI should boot headless without raising, even if mpv is missing.
     async def _boot():
-        app = _app()
+        app = _app(tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
             await pilot.pause()
@@ -104,9 +106,9 @@ def test_app_smoke():
     assert run(_boot())
 
 
-def test_app_play_pause_with_mpv():
+def test_app_play_pause_with_mpv(tmp_path):
     async def _boot():
-        app = _app()
+        app = _app(tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
             if not app.player:

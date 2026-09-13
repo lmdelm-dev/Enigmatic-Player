@@ -56,12 +56,12 @@ class LocalProvider(Provider):
         return tracks
 
     def _track_from_file(self, path: Path) -> Track:
-        title, artist, album, art = self._read_tags(path)
+        title, artist, album, art, duration = self._read_tags(path)
         return Track(
             title=title,
             artist=artist,
             album=album,
-            duration=0.0,
+            duration=duration,
             uri=str(path),
             provider=self.source,
             albumart=art,
@@ -70,21 +70,23 @@ class LocalProvider(Provider):
     # ---- tags --------------------------------------------------------------------
     @staticmethod
     def _read_tags(path: Path):
-        """Return (title, artist, album, embedded_cover_bytes_or_None)."""
+        """Return title, artist, album, embedded cover bytes and duration."""
         title = artist = album = ""
         art: Optional[bytes] = None
+        duration = 0.0
         try:
             meta = MutagenFile(path)
             if meta is not None:
-                title = str(getattr(meta, "title", "") or "")
-                artist = str(getattr(meta, "artist", "") or "")
-                album = str(getattr(meta, "album", "") or "")
+                title = _tag_text(meta, "title", "TIT2", "\u00a9nam", "Title")
+                artist = _tag_text(meta, "artist", "TPE1", "\u00a9ART", "Author")
+                album = _tag_text(meta, "album", "TALB", "\u00a9alb", "WM/AlbumTitle")
+                duration = float(getattr(meta.info, "length", 0.0) or 0.0)
                 art = _extract_cover(meta)
         except Exception:  # noqa: BLE001 - corrupt files shouldn't crash the scan
             pass
         if not title:
             title = path.stem
-        return title, artist, album, art
+        return title, artist, album, art, duration
 
     # ---- Provider API ------------------------------------------------------------
     def search(self, query: str, limit: int = 30) -> List[Track]:
@@ -99,6 +101,17 @@ class LocalProvider(Provider):
     def resolve_stream(self, track: Track) -> Optional[str]:
         p = Path(track.uri)
         return str(p) if p.exists() else None
+
+
+def _tag_text(meta, *keys: str) -> str:
+    for key in keys:
+        value = meta.get(key)
+        if value:
+            value = getattr(value, "text", value)
+            if isinstance(value, (list, tuple)):
+                return ", ".join(str(part) for part in value)
+            return str(value)
+    return ""
 
 
 def _extract_cover(meta) -> Optional[bytes]:

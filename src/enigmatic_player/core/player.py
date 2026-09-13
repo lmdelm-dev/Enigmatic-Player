@@ -66,16 +66,18 @@ class _SocketIPC(_IPCBase):
     def __init__(self, path: str) -> None:
         self._path = path
         self._sock: Optional[socket.socket] = None
+        self._buffer = b""
 
     def connect(self) -> None:
         for _ in range(400):
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             try:
-                s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 s.connect(self._path)
                 s.settimeout(0.5)
                 self._sock = s
                 return
             except (OSError, ConnectionRefusedError):  # noqa: PERF203
+                s.close()
                 time.sleep(0.05)
         raise MpvError("timed out connecting to mpv IPC socket")
 
@@ -84,22 +86,17 @@ class _SocketIPC(_IPCBase):
             raise MpvError("IPC socket not connected")
         self._sock.sendall(payload.encode("utf-8"))
 
-    def recv_until_newline(self, timeout: float = 30.0) -> str:
+    def recv_until_newline(self, timeout: float = 0.5) -> str:
         if self._sock is None:
             raise MpvError("IPC socket not connected")
         self._sock.settimeout(timeout)
-        chunks = []
-        while True:
-            try:
-                chunk = self._sock.recv(65536)
-            except socket.timeout:
-                raise MpvError("timed out waiting for mpv IPC data")
+        while b"\n" not in self._buffer:
+            chunk = self._sock.recv(65536)
             if not chunk:
                 raise OSError("mpv IPC socket closed")
-            chunks.append(chunk)
-            if b"\n" in chunk:
-                break
-        return b"".join(chunks).decode("utf-8", "replace")
+            self._buffer += chunk
+        line, self._buffer = self._buffer.split(b"\n", 1)
+        return line.decode("utf-8", "replace")
 
 
 if sys.platform == "win32":
@@ -318,7 +315,11 @@ class MpvPlayer:
             stderr=subprocess.DEVNULL,
         )
         self._ipc = _make_ipc(ipc_arg)
-        self._ipc.connect()
+        try:
+            self._ipc.connect()
+        except (MpvError, OSError) as exc:
+            self.stop()
+            raise MpvError(f"Unable to connect to mpv: {exc}") from exc
         self._running = True
         self._reader = threading.Thread(target=self._read_loop, daemon=True)
         self._reader.start()
@@ -326,8 +327,6 @@ class MpvPlayer:
             self._send(["observe_property", i + 1, prop])
 
     def stop(self) -> None:
-        if not self._running:
-            return
         try:
             self._send(["quit"])
         except Exception:  # noqa: BLE001
@@ -337,6 +336,7 @@ class MpvPlayer:
                 self._proc.wait(timeout=3)
         except subprocess.TimeoutExpired:
             self._proc.kill()
+            self._proc.wait()
         self._running = False
         if self._ipc:
             self._ipc.close()
@@ -507,7 +507,10 @@ class MpvPlayer:
             while self._running and self._proc and self._proc.poll() is None:
                 if self._ipc is None:
                     break
-                line = self._ipc.recv_until_newline().strip()
+                try:
+                    line = self._ipc.recv_until_newline().strip()
+                except socket.timeout:
+                    continue  # idle/paused playback isn't a disconnect
                 if not line:
                     continue
                 try:

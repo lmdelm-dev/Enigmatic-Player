@@ -14,14 +14,23 @@ if (-not (Get-Command mpv -ErrorAction SilentlyContinue)) {
 }
 
 $Dir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Extras = "youtube,spotify,art,dev"
+$Extras = "youtube,art"
+$VenvDir = if ($env:VIRTUAL_ENV) { $env:VIRTUAL_ENV } else { Join-Path $Dir ".venv" }
+& $Python -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else "Python 3.10+ is required.")'
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$VenvPython = Join-Path $VenvDir "Scripts\python.exe"
+if (-not (Test-Path $VenvPython)) {
+    & $Python -m venv $VenvDir
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 
 Write-Host "Installing Enigmatic Player from $Dir ..."
-& python -m pip install --upgrade pip
-& python -m pip install -e "$Dir[$Extras]"
+& $VenvPython -m pip install -e "${Dir}[$Extras]"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host ""
-Write-Host "Done! Launch with:  enigmatic"
+Write-Host "Done! Activate with: & `"$VenvDir\Scripts\Activate.ps1`""
+Write-Host "Then launch with:   enigmatic"
 Write-Host "Get help with:      enigmatic --help"
 Write-Host ""
 Write-Host "Note: if the TUI misrenders, enable Windows Terminal and set"
