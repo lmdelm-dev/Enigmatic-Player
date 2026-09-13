@@ -6,19 +6,58 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-$VenvDir = "$env:LOCALAPPDATA\enigmatic-player\venv"
-Write-Host "Setting up virtual environment in ${VenvDir}..."
-python -m venv "$VenvDir"
-& "$VenvDir\Scripts\python.exe" -m pip install --upgrade pip
-& "$VenvDir\Scripts\python.exe" -m pip install "git+https://github.com/lmdelm-dev/music-player.git"
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    Write-Host "Git is required. Install it first." -ForegroundColor Red
+    exit 1
+}
 
-# Create epm launcher in the venv Scripts dir
-$Launcher = "$VenvDir\Scripts\epm.bat"
-$Content = "@echo off`r`n`"$VenvDir\Scripts\enigmatic.exe`" %*"
-[System.IO.File]::WriteAllText($Launcher, $Content)
+$InstallDir = "$env:LOCALAPPDATA\enigmatic-player"
+$RepoDir = "$InstallDir\repo"
+$VenvDir = "$RepoDir\.venv"
+$BinDir = "$InstallDir\bin"
+$RepoUrl = "https://github.com/lmdelm-dev/music-player.git"
+
+# Clone or update repo
+if (Test-Path "$RepoDir\.git") {
+    Write-Host "Updating to latest version..."
+    git -C "$RepoDir" pull --ff-only 2>$null
+} else {
+    Write-Host "Cloning repository..."
+    git clone $RepoUrl $RepoDir
+}
+
+# Create or update venv
+if (-not (Test-Path "$VenvDir\Scripts\python.exe")) {
+    Write-Host "Setting up virtual environment..."
+    python -m venv $VenvDir
+}
+
+Write-Host "Installing dependencies..."
+& "$VenvDir\Scripts\pip.exe" install --upgrade pip -q
+& "$VenvDir\Scripts\pip.exe" install -e $RepoDir -q
+
+# Create launcher
+if (-not (Test-Path $BinDir)) { New-Item -ItemType Directory -Path $BinDir -Force | Out-Null }
+$Launcher = "$BinDir\epm.bat"
+@"
+@echo off
+set REPO_DIR=$RepoDir
+set VENV_DIR=$VenvDir
+
+REM Auto-update
+if exist "%REPO_DIR%\.git" (
+    git -C "%REPO_DIR%" pull --ff-only >nul 2>&1
+    if "%REPO_DIR%\pyproject.toml" GTR "%VENV_DIR%\.installed" (
+        "%VENV_DIR%\Scripts\pip.exe" install -e "%REPO_DIR%" -q >nul 2>&1
+        type nul > "%VENV_DIR%\.installed"
+    )
+)
+
+"%VENV_DIR%\Scripts\enigmatic.exe" %*
+"@ | Out-File -FilePath $Launcher -Encoding ASCII
 
 Write-Host ""
 Write-Host "Done! Run 'epm' to launch Enigmatic Player." -ForegroundColor Green
-Write-Host "Add $VenvDir\Scripts to your System PATH to use 'epm' from anywhere."
+Write-Host "Add $BinDir to your System PATH to use 'epm' from anywhere."
 Write-Host "  System Settings > Environment Variables > Path > Edit > New"
-Write-Host "  Paste: $VenvDir\Scripts"
+Write-Host "  Paste: $BinDir"
