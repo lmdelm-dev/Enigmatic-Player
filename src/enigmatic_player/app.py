@@ -161,16 +161,16 @@ class EnigmaticApp(App):
                 yield Label("VIEW", classes="source-title")
                 yield Button("▤  Queue", id="btn-queue", classes="side")
                 yield Label(
-                    "[bold #e6fff3]▶ CONTROLS[/]\n"
+                    "[bold #ebdbb2]▶ CONTROLS[/]\n"
                     "[bold]p[/] play/pause  [bold]n[/]/[bold]b[/] next/prev\n"
                     "[bold]Enter[/] play  [bold]a[/] enqueue  [bold]c[/] clear\n"
                     "[bold]j[/]/[bold]k[/] nav  [bold]/[/] search\n"
-                    "[bold #e6fff3]▶ QUEUE[/]\n"
+                    "[bold #ebdbb2]▶ QUEUE[/]\n"
                     "[bold]t[/] queue  [bold]x[/] shuffle  [bold]r[/] repeat\n"
-                    "[bold #e6fff3]▶ PLAYLISTS[/]\n"
+                    "[bold #ebdbb2]▶ PLAYLISTS[/]\n"
                     "[bold]h[/] browse  [bold]H[/] ♥ add  [bold]N[/] new\n"
                     "[bold]R[/] rename  [bold]D[/] delete\n"
-                    "[bold #e6fff3]▶ FX[/]\n"
+                    "[bold #ebdbb2]▶ FX[/]\n"
                     "[bold]←→[/] adjust  [bold]m[/] reverb  [bold]y[/] pitch\n"
                     "[bold]+[/]/[bold]-[/] vol  [bold]q[/] quit",
                     classes="helpbox",

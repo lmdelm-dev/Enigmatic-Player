@@ -13,9 +13,9 @@ from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Static
 
-COLOR_TRACK = "rgb(28,125,78)"
-COLOR_FILL = "rgb(49,255,168)"
-COLOR_TICK = "rgb(200,255,232)"
+COLOR_TRACK = "#504945"
+COLOR_FILL = "#8ec07c"
+COLOR_TICK = "#b8bb26"
 
 
 class Slider(Widget):

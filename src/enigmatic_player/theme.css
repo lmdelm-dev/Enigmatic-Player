@@ -1,15 +1,18 @@
-/*  Enigmatic Player — "Matrix Console" v2
-    Optimized: variables, focus rings, motion, better hierarchy.
-    Palette: void black + mint phosphor + glow accents.                */
+/*  Enigmatic Player — "Gruvbox" (dark, material)
+    Palette: warm retro dark-grey background + cream text +
+    muted red/yellow/green/aqua/blue/purple accents.
+    bg0 #282828 · bg0_h #1d2021 · bg0_s #32302f · fg1 #ebdbb2
+    red #fb4934 · yellow #fabd2f · green #b8bb26 ·
+    aqua #8ec07c · blue #83a598 · purple #d3869b             */
 
 * {
-    scrollbar-color: #0d3a22;
-    scrollbar-background: #000000;
+    scrollbar-color: #504945;
+    scrollbar-background: #282828;
 }
 
 Screen {
-    background: #000000;
-    color: #30ffa0;
+    background: #282828;
+    color: #ebdbb2;
     layers: base overlay;
 }
 
@@ -17,28 +20,28 @@ Screen {
 #header {
     dock: top;
     height: 1;
-    background: #010502;
-    color: #9dffd0;
+    background: #1d2021;
+    color: #fbf1c7;
     text-style: bold;
-    border-bottom: heavy #0d3a22;
+    border-bottom: heavy #665c54;
 }
 
 #body {
     height: 1fr;
-    background: #000000;
+    background: #282828;
 }
 
 #sidebar {
     width: 28;
     dock: left;
-    background: #030a05 90%;
-    border-right: heavy #0d3a22;
+    background: #1d2021 90%;
+    border-right: heavy #504945;
     padding: 0 1;
     scrollbar-gutter: stable;
 }
 
 .source-title {
-    color: #1c7d4e;
+    color: #a89984;
     text-style: bold;
     padding: 1 0 0 0;
     text-align: left;
@@ -46,9 +49,9 @@ Screen {
 
 /* ------------------------------------------------------------- buttons */
 Button {
-    background: #06120b;
-    color: #2bff96;
-    border: tall #0d2a18;
+    background: #3c3836;
+    color: #ebdbb2;
+    border: tall #665c54;
     text-style: bold;
     padding: 0 1;
     height: 3;
@@ -57,39 +60,39 @@ Button {
 }
 
 Button:hover {
-    background: #0c2a18;
-    color: #e6fff3;
-    border: tall #1fff9d 40%;
+    background: #504945;
+    color: #fbf1c7;
+    border: tall #8ec07c 40%;
 }
 
 Button:focus {
-    background: #0f3320;
-    color: #e6fff3;
-    border: tall #31ffa8;
-    outline: solid #31ffa8;
+    background: #504945;
+    color: #fbf1c7;
+    border: tall #83a598;
+    outline: solid #83a598;
 }
 
 Button:disabled {
-    background: #020703;
-    color: #0d3a22;
+    background: #1d2021;
+    color: #665c54;
     border: none;
 }
 
 Button.success {
-    background: #062015;
-    color: #31ffa8;
-    border: round #1fff9d;
+    background: #32302f;
+    color: #b8bb26;
+    border: round #b8bb26;
 }
 
 Button.success:hover {
-    background: #0c3a24;
-    color: #e6fff3;
-    border: round #1fff9d;
+    background: #3c3836;
+    color: #fbf1c7;
+    border: round #b8bb26;
 }
 
 Button.success:focus {
-    background: #0f4a2e;
-    border: round #31ffa8;
+    background: #504945;
+    border: round #83a598;
     text-style: bold;
 }
 
@@ -97,8 +100,8 @@ Button.side {
     width: 100%;
     height: 3;
     margin: 0 0 1 0;
-    background: #06120b;
-    color: #1f9c63;
+    background: #32302f;
+    color: #bdae93;
     border: none;
     border-left: heavy transparent;
     text-align: left;
@@ -106,32 +109,32 @@ Button.side {
 }
 
 Button.side:hover {
-    background: #0c2a18;
-    color: #e6fff3;
-    border-left: heavy #1c7d4e;
+    background: #504945;
+    color: #fbf1c7;
+    border-left: heavy #8ec07c;
 }
 
 Button.side:focus {
-    background: #0f3320;
-    color: #e6fff3;
-    border-left: heavy #31ffa8;
+    background: #504945;
+    color: #fbf1c7;
+    border-left: heavy #83a598;
 }
 
 Button.side.active {
-    background: #0b2a18;
-    color: #e6fff3;
+    background: #504945;
+    color: #fbf1c7;
     text-style: bold;
-    border-left: heavy #31ffa8;
+    border-left: heavy #83a598;
 }
 
 Button.side.active:hover {
-    background: #0f3a24;
+    background: #665c54;
 }
 
 .helpbox {
-    color: #3aa77a;
-    background: #020703 60%;
-    border: round #0d3a22 60%;
+    color: #d5c4a1;
+    background: #1d2021 60%;
+    border: round #665c54 60%;
     padding: 1 1;
     margin-top: 1;
     text-align: left;
@@ -141,7 +144,7 @@ Button.side.active:hover {
 #main {
     height: 1fr;
     padding: 1 1 1 1;
-    background: #000000;
+    background: #282828;
 }
 
 #searchbar {
@@ -151,29 +154,29 @@ Button.side.active:hover {
 }
 
 Input {
-    background: #010402;
-    border: round #143d26;
-    color: #2bff96;
+    background: #1d2021;
+    border: round #504945;
+    color: #ebdbb2;
     padding: 0 1;
     height: 3;
 }
 
 Input:hover {
-    border: round #1c7d4e;
+    border: round #7c6f64;
 }
 
 Input:focus {
-    border: round #31ffa8;
-    background: #030d06;
+    border: round #83a598;
+    background: #32302f;
     text-style: bold;
 }
 
 Input .input-placeholder {
-    color: #1c7d4e;
+    color: #928374;
 }
 
 Input.-invalid {
-    border: round #ff6ec7;
+    border: round #fb4934;
 }
 
 #listhost {
@@ -183,10 +186,10 @@ Input.-invalid {
 
 TrackList {
     height: 1fr;
-    border: heavy #0d3a22;
+    border: heavy #504945;
     padding: 0 0;
-    background: #000000;
-    border-title-color: #1c7d4e;
+    background: #282828;
+    border-title-color: #928374;
     border-title-style: bold;
 }
 
@@ -212,40 +215,40 @@ ListView {
 }
 
 ListView > .list-view--line {
-    color: #2bff96;
+    color: #ebdbb2;
     padding: 0 1;
     height: 1;
 }
 
 ListView > .list-view--line:hover {
-    background: #06120b 70%;
+    background: #3c3836 70%;
 }
 
 ListView > .list-view--highlight {
-    background: #0c2415;
-    color: #e6fff3;
+    background: #504945;
+    color: #fbf1c7;
     text-style: bold;
 }
 
 ListView > .list-view--highlight:hover {
-    background: #0f2e1b;
+    background: #665c54;
 }
 
 ListView > .list-view--highlight > Label {
-    background: #0c2415;
+    background: #504945;
 }
 
 ListView:focus > .list-view--highlight {
-    background: #0f3320;
-    border-left: heavy #31ffa8;
+    background: #504945;
+    border-left: heavy #83a598;
 }
 
 /* ----------------------------------------------------------- now playing */
 #nowplaying {
     dock: bottom;
-    height: 14;
-    background: #020703 95%;
-    border-top: double #1fff9d;
+    height: 19;
+    background: #1d2021 95%;
+    border-top: double #8ec07c;
     padding: 1 2;
 }
 
@@ -253,9 +256,9 @@ ListView:focus > .list-view--highlight {
     width: 16;
     height: 12;
     margin: 0 1 0 0;
-    border: tall #1fff9d;
+    border: tall #8ec07c;
     padding: 0;
-    background: #000000;
+    background: #282828;
     align: center middle;
 }
 
@@ -271,7 +274,7 @@ ListView:focus > .list-view--highlight {
 }
 
 .np-title {
-    color: #2bff96;
+    color: #ebdbb2;
     text-style: bold;
     text-overflow: ellipsis;
     height: 1;
@@ -279,45 +282,45 @@ ListView:focus > .list-view--highlight {
 }
 
 .np-title.idle {
-    color: #1c7d4e;
+    color: #928374;
     text-style: none;
 }
 
 .np-artist {
-    color: #23c97a;
+    color: #d5c4a1;
     height: 1;
 }
 
 .np-album {
-    color: #1c7d4e;
+    color: #a89984;
     height: 1;
 }
 
 .np-progress {
     margin-top: 1;
     height: 1;
-    color: #30ffa0;
+    color: #fabd2f;
 }
 
 #np-eq {
     margin-top: 1;
     height: 1;
-    color: #1fff9d;
+    color: #8ec07c;
 }
 
 #np-status {
-    color: #23c97a;
+    color: #d5c4a1;
     height: 1;
     margin-top: 1;
 }
 
 #np-status.playing {
-    color: #31ffa8;
+    color: #b8bb26;
     text-style: bold;
 }
 
 #np-fxstate {
-    color: #7dffbf;
+    color: #d3869b;
     height: 1;
     margin-top: 1;
     text-style: italic;
@@ -329,19 +332,19 @@ ListView:focus > .list-view--highlight {
     max-width: 44;
     content-align: right middle;
     height: auto;
-    background: #030a05 50%;
-    border: round #0d3a22 60%;
+    background: #32302f 50%;
+    border: round #665c54 60%;
     padding: 1 1;
 }
 
 .pt-row {
     height: auto;
     content-align: center middle;
-    padding: 0 0 1 0;
+    padding: 0;
 }
 
 .np-transport Button {
-    min-width: 8;
+    min-width: 7;
     height: 3;
     margin: 0 1;
 }
@@ -350,25 +353,33 @@ ListView:focus > .list-view--highlight {
     width: 1fr;
 }
 
+.np-transport Button:hover {
+    background: #504945;
+    color: #fbf1c7;
+}
+
+.np-transport Button:focus {
+    background: #504945;
+    color: #fbf1c7;
+    outline: solid #83a598;
+}
+
 .np-transport Button.toggled {
-    background: #0c3a24;
-    color: #e6fff3;
-    border: round #1fff9d;
+    background: #504945;
+    color: #fbf1c7;
 }
 
-.Button--variant-success.pt-play {
+.np-transport .Button--variant-success.pt-play {
     min-width: 8;
-    background: #0a2e1e;
-    border: round #31ffa8;
+    background: #32302f;
 }
 
-.Button--variant-success.pt-play:hover {
-    background: #0f4a2e;
+.np-transport .Button--variant-success.pt-play:hover {
+    background: #504945;
 }
 
-.Button--variant-success.pt-play:focus {
-    background: #143d26;
-    border: round #e6fff3;
+.np-transport .Button--variant-success.pt-play:focus {
+    background: #665c54;
 }
 
 .pt-pitch {
@@ -380,51 +391,51 @@ ListView:focus > .list-view--highlight {
 
 Slider {
     height: 1;
-    margin: 1 0 0 0;
+    margin: 0 0 0 0;
     background: transparent;
 }
 
 Slider:focus .slider-bar {
-    color: #ff6ec7;
-    background: #071a10;
+    color: #83a598;
+    background: #3c3836;
     text-style: bold;
 }
 
 Slider:hover .slider-bar {
-    color: #e6fff3;
+    color: #fbf1c7;
 }
 
 Slider .slider-bar {
     height: 1;
-    color: #30ffa0;
+    color: #fabd2f;
 }
 
 Header {
-    background: #010502;
-    color: #9dffd0;
+    background: #1d2021;
+    color: #fbf1c7;
     text-style: bold;
 }
 
 Footer {
-    background: #010502;
-    color: #2bff96;
-    border-top: heavy #0d3a22;
+    background: #1d2021;
+    color: #ebdbb2;
+    border-top: heavy #504945;
 }
 
 Footer > .footer--key {
-    color: #31ffa8;
-    background: #071710;
+    color: #b8bb26;
+    background: #32302f;
     text-style: bold;
     padding: 0 1;
 }
 
 Footer > .footer--highlight {
-    background: #0c2a18;
-    color: #e6fff3;
+    background: #504945;
+    color: #fbf1c7;
 }
 
 Footer > .footer--key:hover {
-    background: #0f3a24;
+    background: #665c54;
 }
 
 /* ----------------------------------------------------------- playlist & track row */
@@ -436,7 +447,7 @@ Footer > .footer--key:hover {
 }
 
 .track-row:hover {
-    background: #06120b 50%;
+    background: #3c3836 50%;
 }
 
 .track-main {
@@ -450,25 +461,25 @@ Footer > .footer--key:hover {
     min-width: 3;
     height: 1;
     background: transparent;
-    color: #ff6ec7;
+    color: #fb4934;
     border: none;
     padding: 0;
     content-align: center middle;
 }
 
 .heart-btn:hover {
-    color: #ff99dd;
+    color: #ff9c90;
     text-style: bold;
-    background: #1a0a14 60%;
+    background: #3c3836 60%;
 }
 
 .heart-btn:focus {
-    background: #2a0f1f;
-    border: round #ff6ec7 60%;
+    background: #504945;
+    border: round #fb4934 60%;
 }
 
 .heart-btn:disabled {
-    color: #0d3a22;
+    color: #7c6f64;
 }
 
 .remove-btn {
@@ -476,28 +487,28 @@ Footer > .footer--key:hover {
     min-width: 3;
     height: 1;
     background: transparent;
-    color: #ff6ec7;
+    color: #fb4934;
     border: none;
     padding: 0;
     content-align: center middle;
 }
 
 .remove-btn:hover {
-    color: #ff99dd;
+    color: #ff9c90;
     text-style: bold;
-    background: #1a0a14 60%;
+    background: #3c3836 60%;
 }
 
 .remove-btn:focus {
-    background: #2a0f1f;
-    border: round #ff6ec7 60%;
+    background: #504945;
+    border: round #fb4934 60%;
 }
 
 /* playlist sidebar */
 #playlist-sidebar {
     margin-top: 1;
     height: auto;
-    border-top: heavy #0d3a22 40%;
+    border-top: heavy #504945 40%;
     padding-top: 1;
 }
 
@@ -514,16 +525,16 @@ Footer > .footer--key:hover {
 }
 
 #playlist-list > .list-view--line {
-    color: #2bff96;
+    color: #ebdbb2;
 }
 
 #playlist-list > .list-view--line:hover {
-    background: #06120b 60%;
+    background: #3c3836 60%;
 }
 
 #playlist-list > .list-view--highlight {
-    background: #0c2415;
-    color: #e6fff3;
+    background: #504945;
+    color: #fbf1c7;
     text-style: bold;
 }
 
@@ -536,15 +547,15 @@ Footer > .footer--key:hover {
 .dialog {
     width: 52;
     height: auto;
-    background: #030a05;
-    border: heavy #31ffa8;
+    background: #32302f;
+    border: heavy #83a598;
     padding: 1 2;
     align: center middle;
     layer: overlay;
 }
 
 .dialog-title {
-    color: #31ffa8;
+    color: #83a598;
     text-style: bold;
     margin-bottom: 1;
     text-align: center;
@@ -570,7 +581,7 @@ Footer > .footer--key:hover {
 
 /* empty state */
 .empty-label {
-    color: #1c7d4e;
+    color: #928374;
     text-style: italic;
     padding: 2 1;
     text-align: center;

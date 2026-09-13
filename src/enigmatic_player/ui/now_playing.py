@@ -18,11 +18,11 @@ from .slider import Slider
 MUSIC_NOTE = "♫"
 EQ_CHARS = "▁▂▃▄▅▆▇█"
 
-# matrix-green palette
-INK_BRIGHT = "rgb(200,255,232)"
-INK_MID = "rgb(35,201,122)"
-INK_DIM = "rgb(28,125,78)"
-GLOW = "rgb(49,255,168)"
+# gruvbox palette
+INK_BRIGHT = "#fbf1c7"
+INK_MID = "#d5c4a1"
+INK_DIM = "#928374"
+GLOW = "#8ec07c"
 
 
 class EqBars(Static):
@@ -110,12 +110,12 @@ class NowPlaying(Horizontal):
             yield Label("", id="np-fxstate", classes="np-fxstate")
         with Vertical(id="knobs-panel", classes="np-transport"):
             with Horizontal(classes="pt-row"):
-                yield Button("⏮", id="btn-prev", variant="default")
-                yield Button("⏯", id="btn-play", variant="success", classes="pt-play")
-                yield Button("⏭", id="btn-next", variant="default")
+                yield Button("|<", id="btn-prev", variant="default")
+                yield Button(">", id="btn-play", variant="success", classes="pt-play")
+                yield Button(">|", id="btn-next", variant="default")
             with Horizontal(classes="pt-row"):
-                yield Button("🔀", id="btn-shuffle", variant="default")
-                yield Button("🔁", id="btn-repeat", variant="default")
+                yield Button("S", id="btn-shuffle", variant="default")
+                yield Button("R", id="btn-repeat", variant="default")
             yield Slider("VOL", value=100, maximum=100, id="sl-vol", classes="np-knob")
             yield Slider(
                 "SPD",
@@ -158,7 +158,7 @@ class NowPlaying(Horizontal):
         self.query_one(Progress).duration = value
 
     def watch_paused(self, value: bool) -> None:
-        self.query_one("#btn-play", Button).label = "▶" if value else "Ⅱ"
+        self.query_one("#btn-play", Button).label = ">" if value else "||"
         self.query_one(Progress).active = not self.paused and bool(self.title)
         self._render_status()
 
