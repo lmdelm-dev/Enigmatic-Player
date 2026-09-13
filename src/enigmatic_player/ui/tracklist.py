@@ -23,12 +23,14 @@ class TrackListItem(ListItem):
         number: int = 0,
         show_heart: bool = False,
         on_heart: Optional[callable] = None,
+        on_download: Optional[callable] = None,
         **kwargs,
     ) -> None:
         self.track = track
         self.number = number
         self.show_heart = show_heart
         self.on_heart = on_heart
+        self.on_download = on_download
         super().__init__(**kwargs)
 
     def compose(self) -> ComposeResult:
@@ -45,15 +47,22 @@ class TrackListItem(ListItem):
             f"{artist_part} "
             f"[{GB_INK}]{duration}[/]"
         )
+        buttons = []
+        if self.on_download:
+            buttons.append(Button("DL", id="btn-download", classes="download-btn"))
+        if self.show_heart:
+            buttons.append(Button("♡", id="btn-heart", classes="heart-btn"))
         yield Horizontal(
             Label(line, classes="track-main"),
-            Button("♡", id="btn-heart", classes="heart-btn", disabled=not self.show_heart),
+            *buttons,
             classes="track-row",
         )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn-heart" and self.on_heart:
             self.on_heart(self.track)
+        elif event.button.id == "btn-download" and self.on_download:
+            self.on_download(self.track)
 
 
 class PlaylistListItem(ListItem):
@@ -117,6 +126,7 @@ class TrackList(Vertical):
         tracks: Optional[List[Track]] = None,
         show_heart: bool = False,
         on_heart: Optional[callable] = None,
+        on_download: Optional[callable] = None,
     ) -> None:
         if self._list is None:
             return
@@ -124,7 +134,10 @@ class TrackList(Vertical):
         if tracks:
             for i, t in enumerate(tracks, start=1):
                 self._list.append(
-                    TrackListItem(t, number=i, show_heart=show_heart, on_heart=on_heart)
+                    TrackListItem(
+                        t, number=i, show_heart=show_heart,
+                        on_heart=on_heart, on_download=on_download,
+                    )
                 )
         self.call_after_refresh(self._select_first)
 

@@ -482,6 +482,28 @@ Footer > .footer--key:hover {
     color: #7c6f64;
 }
 
+.download-btn {
+    width: 4;
+    min-width: 4;
+    height: 1;
+    background: transparent;
+    color: #83a598;
+    border: none;
+    padding: 0;
+    content-align: center middle;
+}
+
+.download-btn:hover {
+    color: #d3869b;
+    text-style: bold;
+    background: #3c3836 60%;
+}
+
+.download-btn:focus {
+    background: #504945;
+    border: round #83a598 60%;
+}
+
 .remove-btn {
     width: 3;
     min-width: 3;

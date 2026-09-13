@@ -311,6 +311,55 @@ class EnigmaticApp(App):
         self._known_length = track.duration or 0.0
         self.query_one(NowPlaying).set_track(track, paused=False)
 
+    # ------------------------------------------------------------------ download
+    def _download_track(self, track: Track) -> None:
+        """Download a YouTube track as MP3 to ~/Downloads/EPM/."""
+        import os
+        import platformdirs
+
+        downloads = platformdirs.user_downloads_dir()
+        epm_dir = os.path.join(downloads, "EPM")
+        os.makedirs(epm_dir, exist_ok=True)
+
+        safe_title = "".join(c if c.isalnum() or c in " -_" else "_" for c in track.title)[:80]
+        artist = (track.artist or "Unknown").replace("/", "-")
+        filename = f"{artist} - {safe_title}.mp3"
+        outpath = os.path.join(epm_dir, filename)
+
+        if os.path.exists(outpath):
+            self.notify(f"Already downloaded: {filename}", timeout=3)
+            return
+
+        self.notify(f"Downloading: {track.title}...", timeout=5)
+
+        def _do_download() -> bool:
+            try:
+                import yt_dlp
+                ydl_opts = {
+                    "format": "bestaudio/best",
+                    "outtmpl": outpath.replace(".mp3", ".%(ext)s"),
+                    "postprocessors": [{
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": "mp3",
+                        "preferredquality": "192",
+                    }],
+                    "quiet": True,
+                    "no_warnings": True,
+                }
+                url = f"https://www.youtube.com/watch?v={track.uri}"
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([url])
+                return True
+            except Exception as exc:  # noqa: BLE001
+                self.notify(f"Download failed: {exc}", severity="error", timeout=5)
+                return False
+
+        def _on_done(result: bool) -> None:
+            if result:
+                self.notify(f"Saved: {filename}", timeout=3)
+
+        self.run_worker(_do_download, exit=True, callback=_on_done)
+
     # ------------------------------------------------------------------ polling
     def _poll(self) -> None:
         if not (self.player and self.player.running):
@@ -634,7 +683,12 @@ class EnigmaticApp(App):
             return
         # Show heart button for YouTube results
         show_heart = self._source is Source.YOUTUBE
-        self.query_one("#list-view", TrackList).set_tracks(tracks, show_heart=show_heart, on_heart=self._add_track_to_playlist)
+        on_dl = self._download_track if self._source is Source.YOUTUBE else None
+        self.query_one("#list-view", TrackList).set_tracks(
+            tracks, show_heart=show_heart,
+            on_heart=self._add_track_to_playlist,
+            on_download=on_dl,
+        )
         self.notify(f"{len(tracks)} results", timeout=2)
 
     # ---- playlist actions ------------------------------------------------------
