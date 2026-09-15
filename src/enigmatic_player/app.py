@@ -10,6 +10,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Footer, Header, Input, Label, ListView
+from textual.worker import Worker, WorkerState
 
 from .config import Config
 from .core.player import MpvError, MpvPlayer
@@ -332,7 +333,7 @@ class EnigmaticApp(App):
 
         self.notify(f"Downloading: {track.title}...", timeout=5)
 
-        def _do_download() -> bool:
+        def _do_download() -> Optional[str]:
             try:
                 import yt_dlp
                 ydl_opts = {
@@ -349,16 +350,24 @@ class EnigmaticApp(App):
                 url = f"https://www.youtube.com/watch?v={track.uri}"
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([url])
-                return True
+                return None
             except Exception as exc:  # noqa: BLE001
-                self.notify(f"Download failed: {exc}", severity="error", timeout=5)
-                return False
+                return str(exc)
 
-        def _on_done(result: bool) -> None:
-            if result:
-                self.notify(f"Saved: {filename}", timeout=3)
+        self.run_worker(
+            _do_download, thread=True, group="download",
+            description=filename, exit_on_error=False,
+        )
 
-        self.run_worker(_do_download, thread=True, callback=_on_done)
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        """Report download completion back on the UI thread."""
+        if event.worker.group != "download" or event.state != WorkerState.SUCCESS:
+            return
+        error = event.worker.result
+        if error:
+            self.notify(f"Download failed: {error}", severity="error", timeout=5)
+        else:
+            self.notify(f"Saved: {event.worker.description}", timeout=3)
 
     # ------------------------------------------------------------------ polling
     def _poll(self) -> None:
