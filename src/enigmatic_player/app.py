@@ -361,7 +361,13 @@ class EnigmaticApp(App):
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         """Report download completion back on the UI thread."""
-        if event.worker.group != "download" or event.state != WorkerState.SUCCESS:
+        if event.worker.group != "download":
+            return
+        if event.state == WorkerState.ERROR:
+            error = getattr(event.worker, "error", None)
+            self.notify(f"Download failed: {error}", severity="error", timeout=5)
+            return
+        if event.state != WorkerState.SUCCESS:
             return
         error = event.worker.result
         if error:
