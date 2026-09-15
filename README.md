@@ -1,6 +1,6 @@
 # Enigmatic Player 🔋🎮
 
-A cute **Game Boy style** music player for your terminal — play local files
+A lightweight **TUI music player** for your terminal — play local files
 and search YouTube Music — all from a colorful Textual TUI
 (or quick one-shot CLI commands).
 
