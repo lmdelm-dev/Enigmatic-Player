@@ -1,8 +1,8 @@
-# Enigmatic Player 🔋🎮
+# Enigmatic Player
 
-A lightweight **TUI music player** for your terminal — play local files
-and search YouTube Music — all from a colorful Textual TUI
-(or quick one-shot CLI commands).
+A lightweight **TUI music player** for your terminal. Play local files or
+search YouTube Music, all from a keyboard-first Textual interface — with a
+one-shot CLI for quick control.
 
 Built with [Textual](https://textual.textualize.io/) + [mpv](https://mpv.io).
 
@@ -10,16 +10,15 @@ Built with [Textual](https://textual.textualize.io/) + [mpv](https://mpv.io).
 
 ## Features
 
-- 🎮 **Pixel Game Boy theme** — classic 4-shade DMG palette
-  (`#9bbc0f #8bac0f #306230 #0f380f`)
-- 🎨 **Pixel-art album covers** — covers are dithered to Game Boy pixel art
-  with ordered (Bayer) dithering via Pillow
-- 📂 **Local library** — scan folders, read ID3/FLAC/MP4 tags, embedded art
-- ▶️ **YouTube Music** — search songs and play full-length audio
+- 📂 **Local library** — scan folders, read ID3/FLAC/MP4 tags, extract embedded art
+- 🎵 **YouTube Music** — search songs and play full-length audio
   (metadata: `ytmusicapi`, streams: `yt-dlp`)
-- 🎚 **mpv engine** — gapless playback, JSON IPC for precise control
-  (play/pause/seek/volume), works on Linux/macOS/Windows
+- 🎚 **mpv engine** — gapless playback driven over JSON IPC
+  (play/pause/seek/volume), works on Linux / macOS / Windows
 - 🗒 **Queue engine** — shuffle, repeat, add/enqueue, session resume
+- 🎨 **Album art** — cover art rendered in the terminal, dithered via Pillow
+- ⏩ **Playback effects** — speed control (0.5x–2x), reverb, and pitch
+  (tempo / nightcore) modes
 - ⌨️ **Keyboard-first** TUI with an animated mini-EQ and progress bar
 - 🚀 **One-shot CLI** — `enigmatic play "~/Music"`, `enigmatic search "lofi"`
 
@@ -33,7 +32,7 @@ Install mpv: `sudo apt install mpv` · `brew install mpv` · `winget install mpv
 
 ## Install
 
-### One-liner (requires Python 3.10+ and mpv)
+### One-liner (requires Python 3.10+, git, and mpv)
 
 **Linux / macOS:**
 ```bash
@@ -65,7 +64,7 @@ Optional extras:
 | Extra | Includes |
 |---|---|
 | `youtube` | `ytmusicapi`, `yt-dlp` |
-| `art` | `pillow` (Game Boy cover rendering) |
+| `art` | `pillow` (album cover rendering) |
 | `dev` | `pytest`, `ruff` |
 
 ### Install helpers
@@ -97,17 +96,20 @@ python -m enigmatic_player
 
 | Key | Action |
 |---|---|
+| `Enter` | play highlighted |
 | `p` | play / pause |
 | `n` `b` | next / previous |
 | `j` `k` | move up / down in list |
-| `Enter` | play highlighted |
 | `/` | focus search bar |
 | `a` | enqueue highlighted |
 | `t` | toggle queue view |
 | `c` | clear queue |
 | `x` | shuffle on/off |
 | `r` | repeat on/off |
-| `+` `-` | volume |
+| `+` `-` | volume up / down |
+| `[` `]` | speed down / up |
+| `m` | toggle reverb |
+| `y` | toggle pitch mode (tempo / nightcore) |
 | `h` | focus playlists / leave playlist view |
 | `H` | choose a playlist for the highlighted track |
 | `N` | create playlist |
@@ -125,12 +127,14 @@ loads that playlist into the playback queue.
 ### One-shot CLI
 
 ```bash
-enigmatic play ~/Music/lofi/          # play a folder
-enigmatic play song.mp3              # play a file
-enigmatic play https://youtu.be/...  # play a URL
+enigmatic tui                              # launch the TUI (default)
+enigmatic play ~/Music/lofi/               # play a folder
+enigmatic play song.mp3                    # play a file
+enigmatic play https://youtu.be/...        # play a URL
 enigmatic search "lofi" --provider youtube --limit 10
-enigmatic config --library ~/Music   # add a music folder
-enigmatic status                     # show config summary
+enigmatic formats <video-url>              # list YouTube audio formats
+enigmatic config --library ~/Music         # add a music folder
+enigmatic status                           # show config summary
 ```
 
 ## YouTube Music setup
@@ -157,8 +161,8 @@ ruff check src tests
 ```
 src/enigmatic_player/
   app.py           # Textual App: layout, key bindings, orchestration
-  theme.css        # Game Boy (DMG) theme
-  cli.py           # one-shot commands (play/search/config/status)
+  theme.css        # color theme
+  cli.py           # one-shot commands (tui/play/search/formats/config/status)
   config.py        # config + session persistence
   core/
     player.py      # mpv subprocess + JSON IPC (socket / named pipe)
@@ -168,7 +172,7 @@ src/enigmatic_player/
     local.py       # folder scan + tag/art extraction
     youtube.py     # ytmusicapi + yt-dlp
   ui/
-    art.py         # Game Boy dithering of album art
+    art.py         # album cover rendering for the terminal
     now_playing.py # art, meta, progress, mini-EQ, transport
     tracklist.py   # reusable list of tracks
 ```
