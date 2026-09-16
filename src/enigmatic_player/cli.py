@@ -82,8 +82,45 @@ def main(argv=None) -> int:
 def _run_tui() -> int:
     from .app import EnigmaticApp
 
+    if not sys.stdout.isatty():
+        print(
+            "Enigmatic Player needs a real terminal to render its TUI.\n"
+            "Run `epm` from a terminal session (cmd, PowerShell, Windows "
+            "Terminal, or a terminal emulator on Linux/macOS).",
+            file=sys.stderr,
+        )
+        return 1
+
+    _enable_vt_processing()
+
     EnigmaticApp().run()
     return 0
+
+
+def _enable_vt_processing() -> None:
+    """Force ENABLE_VIRTUAL_TERMINAL_PROCESSING on a Windows console.
+
+    Textual does this itself, but a wrapper (.bat launcher, conhost legacy
+    mode, etc.) can leave the console in a state where the ESC byte of every
+    ANSI code is printed literally as `[[32;19;15m...`. Enabling it explicitly
+    up front avoids that. No-op on POSIX or when stdout isn't a console.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = k32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+        if not handle or handle == wintypes.HANDLE(-1).value:
+            return
+        mode = wintypes.DWORD()
+        if not k32.GetConsoleMode(handle, ctypes.byref(mode)):
+            return
+        k32.SetConsoleMode(handle, mode.value | 4)  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
+    except Exception:  # noqa: BLE001 - best effort only
+        pass
 
 
 def _cmd_play(target: str, shuffle: bool = False) -> int:
