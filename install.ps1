@@ -11,6 +11,15 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
+# Check for mpv (playback) and ffmpeg (YouTube MP3 downloads)
+foreach ($bin in @("mpv", "ffmpeg")) {
+    if (-not (Get-Command $bin -ErrorAction SilentlyContinue)) {
+        $desc = if ($bin -eq "mpv") { "audio playback engine (required)" } else { "YouTube audio downloads / MP3 conversion (required for downloads)" }
+        Write-Host "Warning: '$bin' not found — $desc" -ForegroundColor Yellow
+        Write-Host "  Install with:  winget install -e --id mpv-player.mpv-CI.MSVC   or   winget install -e --id Gyan.FFmpeg" -ForegroundColor Yellow
+    }
+}
+
 $InstallDir = "$env:LOCALAPPDATA\enigmatic-player"
 $RepoDir = "$InstallDir\repo"
 $VenvDir = "$RepoDir\.venv"

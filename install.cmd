@@ -13,6 +13,17 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+where mpv >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Warning: mpv not found - the audio playback engine (required^).
+    echo   Install: winget install -e --id mpv-player.mpv-CI.MSVC
+)
+where ffmpeg >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Warning: ffmpeg not found - needed for YouTube audio downloads.
+    echo   Install: winget install -e --id Gyan.FFmpeg
+)
+
 set INSTALL_DIR=%LOCALAPPDATA%\enigmatic-player
 set REPO_DIR=%INSTALL_DIR%\repo
 set VENV_DIR=%REPO_DIR%\.venv

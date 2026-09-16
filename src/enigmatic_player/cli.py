@@ -59,6 +59,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
+    # Print ♪/— and other non-ASCII safely even on legacy consoles (cp1252).
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
     parser = _build_parser()
     args = parser.parse_args(argv)
 

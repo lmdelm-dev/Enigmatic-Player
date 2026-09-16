@@ -9,6 +9,11 @@ if ! command -v python3 &>/dev/null; then
     exit 1
 fi
 
+if ! command -v git &>/dev/null; then
+    echo "Error: Git is required. Install it first." >&2
+    exit 1
+fi
+
 PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
 PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
@@ -17,10 +22,17 @@ if [ "$PYTHON_MAJOR" -lt 3 ] || { [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR"
     exit 1
 fi
 
-# Check for mpv
-if ! command -v mpv &>/dev/null; then
-    echo "Warning: mpv is required for audio playback." >&2
-    echo "  Install: sudo zypper install mpv  (openSUSE)" >&2
+# Check for mpv (playback) and ffmpeg (YouTube MP3 downloads)
+MISSING=()
+command -v mpv &>/dev/null || MISSING+=("mpv")
+command -v ffmpeg &>/dev/null || MISSING+=("ffmpeg")
+if [ "${#MISSING[@]}" -gt 0 ]; then
+    echo "Warning: missing system packages: ${MISSING[*]}" >&2
+    echo "  mpv       = audio playback engine (required)" >&2
+    echo "  ffmpeg    = YouTube audio downloads / MP3 conversion (required for downloads)" >&2
+    echo "  Install e.g.: sudo apt install mpv ffmpeg" >&2
+    echo "              sudo dnf install mpv ffmpeg" >&2
+    echo "              brew install mpv ffmpeg" >&2
 fi
 
 INSTALL_DIR="${HOME}/.local/share/enigmatic-player"
@@ -48,7 +60,8 @@ fi
 
 echo "Installing dependencies..."
 "$VENV_DIR/bin/pip" install --upgrade pip -q
-"$VENV_DIR/bin/pip" install -e "$VENV_DIR/..[youtube,art]" -q
+"$VENV_DIR/bin/pip" install -e "$REPO_DIR[youtube,art]" -q
+: > "$VENV_DIR/.installed"
 
 # Create wrapper
 mkdir -p "$BIN_DIR"

@@ -334,6 +334,13 @@ class EnigmaticApp(App):
         self.notify(f"Downloading: {track.title}...", timeout=5)
 
         def _do_download() -> Optional[str]:
+            import shutil
+
+            if not shutil.which("ffmpeg"):
+                return (
+                    "ffmpeg not found — required to convert audio to MP3.\n"
+                    "Install it:  sudo apt install ffmpeg  /  brew install ffmpeg  /  winget install ffmpeg"
+                )
             try:
                 import yt_dlp
                 ydl_opts = {
