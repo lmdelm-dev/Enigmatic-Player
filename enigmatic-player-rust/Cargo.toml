@@ -1,6 +1,6 @@
 [package]
 name = "enigmatic-player"
-version = "1.1.0"
+version = "1.2.0"
 edition = "2021"
 description = "Enigmatic Player: a pixel-style terminal music player"
 authors = ["Jamal Tiliouan"]

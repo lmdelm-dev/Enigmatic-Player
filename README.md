@@ -21,24 +21,35 @@ On the **playlists** source (press `5`), select a playlist and press `S`:
 
 - A `ELIST1:` share code is copied/saved; the player also writes `~/.config/enigmatic-player/shares/<name>.elist.txt` (Windows: `%APPDATA%\enigmatic-player\shares\`).
 - Another person presses `U`, pastes the code (or the path to that file), and gets a playlist import.
-- The code contains **metadata and online URLs only** â€” no file paths leave your machine. For local tracks the importer's own library is matched by tags, then file name; import reports how many tracks were not found.
+- The code contains **metadata and online URLs only** — no file paths leave your machine. For local tracks the importer's own library is matched by tags, then file name; import reports how many tracks were not found.
 
-## Listen together by invite
+## Listen together (zero setup)
 
 A room keeps everyone on the same track, position and play/pause state in real time. Audio is **not** streamed between people: every listener plays their own copy (local file, matched by tags/filename, or the same online URL).
 
-1. Someone runs a sync relay: `cargo run --release -- --serve 0.0.0.0:8080` (or `--serve` alone for `0.0.0.0:8080`).
-2. The host presses `H` (or, on source 5, selects a playlist and presses `H`) to host on the server set under **Settings > online** (default `127.0.0.1:8080`, override with the `ENIGMATIC_SERVER` env var or by editing it there). An invite like `EROOM1:<hex-server>:<CODE>` is shown in the room popup (`H` anytime while live).
-3. Guests press `U`, paste the invite (or just the room code plus the same server setting), and follow the host.
+Since v1.8.0 there is no server to run and nothing to configure:
 
-While in a room, only the host changes tracks, seeks or pauses; guests see that in the popup and in the title bar (`live: CODE guest`). Press `L` to leave (hosts end the session).
+1. The host presses `H` (or, on source 5, selects a playlist and presses `H`). The app **becomes the room itself**: it opens a room relay inside the process.
+2. Automatically, in the background, the app tries to make the room reachable — first **NAT-PMP**, then **UPnP** — asking your router to open a mapping for the session only. When the router agrees (most consumer routers do, via UPnP), the invite also works **on the internet**.
+3. **LAN discovery**: while a room is open the app announces it on the local network (UDP broadcast, nothing identifying beyond host name, room code and room addresses). Anyone else running the player on the same Wi-Fi/segment presses `U` and sees the room in a list — pick it, press enter, you are in. No typing at all.
+4. Friends outside your network: they paste the invite `EROOM1:...` (copyable in the room popup). The invite carries **several addresses** (LAN, then the router-mapped public one); the joiner tries each in order, so the same single invite works for both friends at home and friends far away.
+5. Press `L` to leave (hosts end the session for everyone and the router mapping is removed again).
+
+While in a room, only the host changes tracks, seeks or pauses; guests see that in the room popup and the title bar (`live: CODE guest`).
+
+Manual fallbacks, only if you want them:
+
+- `--serve` still exists: `cargo run --release -- --serve 0.0.0.0:8080` runs a standalone relay; set `ENIGMATIC_SERVER=host:port` (env var) to point rooms at it instead of embedded hosting. A single invite may also carry several relay addresses separated by `|`.
+- `ENIGMATIC_NO_PUNCH=1` disables the router port-opening entirely if you prefer your network untouched.
 
 Important limits, stated honestly:
 
-- The relay is plain TCP + JSON lines: **no TLS, no accounts**. The 6-character room code is the only access control. Run it on a trusted LAN, or behind a TLS reverse proxy â€” do not port-forward it to the public internet unprotected.
-- Rooms are in memory only; leaving or restarting the server ends them.
-- Key presses are not a substitute for a real chat; there is none.
-- No server is operated by or bundled with this project at any public address; you host your own.
+- Room traffic is plain TCP + JSON lines over the sync link: **no TLS, no accounts**. The 8-digit room code is the only access control. The relay holds room state only (track titles, artists, durations, online URLs) — never your audio files, and no local file paths ever leave the machine.
+- When the router refuses both NAT-PMP and UPnP (some ISPs use CGNAT; some routers ship UPnP off), the room stays LAN-only and the app says so plainly instead of pretending. In that case the `--serve` fallback above is the way out for internet guests.
+- **First run on Windows**: opening the port and receiving broadcasts can trigger a Windows Defender Firewall prompt — allow it for private networks, or discovery/port-opening will silently fail on that machine.
+- Some Wi-Fi access points filter UDP broadcasts; then LAN discovery shows nothing, but pasting the invite always still works.
+- Rooms are in memory only; leaving, quitting or a router reboot ends them.
+- No server is operated by or bundled with this project at any public address; your friend's laptop is the server.
 
 ## License
 
