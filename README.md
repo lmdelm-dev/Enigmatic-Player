@@ -25,14 +25,16 @@ Built with [Textual](https://textual.textualize.io/) + [mpv](https://mpv.io).
 ## Requirements
 
 - **Python 3.10+**
-- **mpv** — the audio engine (system binary)
+- **mpv** — the audio engine. **On Windows it's installed automatically** on first
+  run (official build downloaded into `%LOCALAPPDATA%\enigmatic-player\engines`;
+  same for `ffmpeg`, needed for YouTube downloads). No requirement to install it
+  yourself. On Linux/macOS you'll be shown the one command for your package
+  manager (`sudo apt install mpv` · `brew install mpv`).
 - **yt-dlp** (for YouTube) — typically pulled in automatically
-
-Install mpv: `sudo apt install mpv` · `brew install mpv` · `winget install mpv`
 
 ## Install
 
-### One-liner (requires Python 3.10+, git, and mpv)
+### One-liner (requires Python 3.10+, and git)
 
 **Linux / macOS:**
 ```bash
@@ -71,7 +73,8 @@ Optional extras:
 
 Run these from your downloaded or cloned checkout. The helpers install the
 `youtube` and `art` extras into the active virtual environment, or create
-`.venv` in the checkout if none is active. They require Python 3.10+ and mpv.
+`.venv` in the checkout if none is active. They require Python 3.10+. mpv is
+auto-installed on Windows; on other platforms the helpers only warn about it.
 
 Linux/macOS:
 ```bash
