@@ -115,8 +115,35 @@ def _run_tui() -> int:
         )
         return 1
 
-    EnigmaticApp().run()
+    try:
+        EnigmaticApp().run()
+    finally:
+        _reset_console_input()
     return 0
+
+
+def _reset_console_input() -> None:
+    """Leave the console in a clean state on exit.
+
+    A TUI session enables ANSI mouse-reporting on the console. If the process
+    is killed/closed while running, that mode can stick and the next program
+    (even a bare cmd prompt) starts echoing SGR mouse codes like
+    ``[<32;19;15M`` on every click. Drop the VT-input flag so the console
+    stops translating clicks into dropped garbage. Best effort only.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = k32.GetStdHandle(-10)  # STD_INPUT_HANDLE
+        mode = wintypes.DWORD()
+        if k32.GetConsoleMode(handle, ctypes.byref(mode)):
+            k32.SetConsoleMode(handle, mode.value & ~0x200)  # ^VT_INPUT
+    except Exception:  # noqa: BLE001 - best effort only
+        pass
 
 
 def _enable_vt_processing() -> bool:
