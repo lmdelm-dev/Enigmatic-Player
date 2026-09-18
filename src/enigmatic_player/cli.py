@@ -98,22 +98,33 @@ def _run_tui() -> int:
         )
         return 1
 
-    _enable_vt_processing()
+    if not _enable_vt_processing():
+        print(
+            "This console can't render colors/ANSI (legacy cmd window).\n"
+            "The TUI will look garbled here. Best fix: install Windows Terminal\n"
+            f"  winget install Microsoft.WindowsTerminal\n"
+            "and run `epm` from it. Or in cmd's Properties uncheck\n"
+            "'Use legacy console'.",
+            file=sys.stderr,
+        )
 
     EnigmaticApp().run()
     return 0
 
 
-def _enable_vt_processing() -> None:
+def _enable_vt_processing() -> bool:
     """Force ENABLE_VIRTUAL_TERMINAL_PROCESSING on a Windows console.
 
-    Textual does this itself, but a wrapper (.bat launcher, conhost legacy
-    mode, etc.) can leave the console in a state where the ESC byte of every
-    ANSI code is printed literally as `[[32;19;15m...`. Enabling it explicitly
-    up front avoids that. No-op on POSIX or when stdout isn't a console.
+    Textual does this itself, but a wrapper (.bat launcher, legacy conhost
+    mode, a maximized legacy window, etc.) can leave the console in a state
+    where the ESC byte of every ANSI code is printed literally as
+    `[[32;19;15m...`. Enabling it explicitly up front avoids that.
+
+    Returns True if the console confirms VT processing is on (or we're not on
+    Windows); False if stdout isn't a console or VT couldn't be enabled.
     """
     if sys.platform != "win32":
-        return
+        return True
     try:
         import ctypes
         from ctypes import wintypes
@@ -121,13 +132,19 @@ def _enable_vt_processing() -> None:
         k32 = ctypes.WinDLL("kernel32", use_last_error=True)
         handle = k32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
         if not handle or handle == wintypes.HANDLE(-1).value:
-            return
+            return False
         mode = wintypes.DWORD()
         if not k32.GetConsoleMode(handle, ctypes.byref(mode)):
-            return
-        k32.SetConsoleMode(handle, mode.value | 4)  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
+            return False
+        mode.value |= 4  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
+        k32.SetConsoleMode(handle, mode.value)
+        # Read back to confirm the flag actually took (legacy conhost ignores it).
+        check = wintypes.DWORD()
+        if not k32.GetConsoleMode(handle, ctypes.byref(check)):
+            return False
+        return bool(check.value & 4)
     except Exception:  # noqa: BLE001 - best effort only
-        pass
+        return False
 
 
 def _cmd_play(target: str, shuffle: bool = False) -> int:
