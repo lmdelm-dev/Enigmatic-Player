@@ -103,13 +103,17 @@ def _run_tui() -> int:
 
     if not _enable_vt_processing():
         print(
-            "This console can't render colors/ANSI (legacy cmd window).\n"
-            "The TUI will look garbled here. Best fix: install Windows Terminal\n"
-            "  winget install Microsoft.WindowsTerminal\n"
-            "and run `epm` from it. Or in cmd's Properties uncheck\n"
-            "'Use legacy console'.",
+            "This console can't render the TUI: its ANSI/VT processing is off\n"
+            "(pop-up says 'Use legacy console' or the window is a maximized\n"
+            "legacy cmd box). To fix, do ONE of:\n"
+            "  1. Install Windows Terminal:  winget install Microsoft.WindowsTerminal\n"
+            "     and run `epm` from it.  (recommended)\n"
+            "  2. In cmd's Properties > Options, UNCHECK 'Use legacy console'.\n"
+            "  3. Never maximize the legacy cmd window before opening epm.\n"
+            "Refusing to start rather than flood the screen with garbage.",
             file=sys.stderr,
         )
+        return 1
 
     EnigmaticApp().run()
     return 0
@@ -120,11 +124,15 @@ def _enable_vt_processing() -> bool:
 
     Textual does this itself, but a wrapper (.bat launcher, legacy conhost
     mode, a maximized legacy window, etc.) can leave the console in a state
-    where the ESC byte of every ANSI code is printed literally as
-    `[[32;19;15m...`. Enabling it explicitly up front avoids that.
+    where the ESC byte of every ANSI code (including mouse/cursor sequences)
+    is printed literally as ``[[38;5;...m`` / ``[<35;12;3M``. Enabling it
+    explicitly up front avoids that.
 
-    Returns True if the console confirms VT processing is on (or we're not on
-    Windows); False if stdout isn't a console or VT couldn't be enabled.
+    Returns True if VT processing is confirmed on (or stdout isn't a real
+    console at all -- e.g. a pty like Git Bash/mintty, where the emulator
+    handles ANSI itself). Returns False only for a genuine Windows console
+    that refuses the VT flag: that is a legacy-console-mode window which
+    would print raw escape codes everywhere.
     """
     if sys.platform != "win32":
         return True
@@ -138,7 +146,9 @@ def _enable_vt_processing() -> bool:
             return False
         mode = wintypes.DWORD()
         if not k32.GetConsoleMode(handle, ctypes.byref(mode)):
-            return False
+            # Not a console handle: an emulator/pty (mintty, VS Code, SSH).
+            # Those interpret ANSI themselves, so allow the TUI.
+            return True
         mode.value |= 4  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
         k32.SetConsoleMode(handle, mode.value)
         # Read back to confirm the flag actually took (legacy conhost ignores it).
