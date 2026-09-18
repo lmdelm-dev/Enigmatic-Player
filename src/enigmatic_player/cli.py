@@ -12,7 +12,6 @@ Examples
 from __future__ import annotations
 
 import argparse
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -98,11 +97,15 @@ def _run_tui() -> int:
         )
         return 1
 
+    from .core import binaries
+
+    binaries.ensure_engines()
+
     if not _enable_vt_processing():
         print(
             "This console can't render colors/ANSI (legacy cmd window).\n"
             "The TUI will look garbled here. Best fix: install Windows Terminal\n"
-            f"  winget install Microsoft.WindowsTerminal\n"
+            "  winget install Microsoft.WindowsTerminal\n"
             "and run `epm` from it. Or in cmd's Properties uncheck\n"
             "'Use legacy console'.",
             file=sys.stderr,
@@ -148,9 +151,11 @@ def _enable_vt_processing() -> bool:
 
 
 def _cmd_play(target: str, shuffle: bool = False) -> int:
-    mpv = shutil.which("mpv")
+    from .core import binaries
+
+    mpv = binaries.mpv_path()
     if not mpv:
-        print("mpv is required for playback. Install it first.", file=sys.stderr)
+        print("mpv not found. " + binaries.mpv_hint(), file=sys.stderr)
         return 1
 
     args = [mpv, "--no-video", "--force-window=no", "--terminal=no"]

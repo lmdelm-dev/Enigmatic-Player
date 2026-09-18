@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import List, Optional
 
 from textual.app import App, ComposeResult, on
@@ -187,7 +188,9 @@ class EnigmaticApp(App):
     # ------------------------------------------------------------------ mount
     def on_mount(self) -> None:
         try:
-            self.player = MpvPlayer()
+            from .core import binaries
+
+            self.player = MpvPlayer(mpv_bin=binaries.mpv_path())
             self.player.start()
         except MpvError as exc:
             self.notify(str(exc), severity="error", timeout=8)
@@ -316,6 +319,7 @@ class EnigmaticApp(App):
     def _download_track(self, track: Track) -> None:
         """Download a YouTube track as MP3 to ~/Downloads/EPM/."""
         import os
+
         import platformdirs
 
         downloads = platformdirs.user_downloads_dir()
@@ -334,12 +338,13 @@ class EnigmaticApp(App):
         self.notify(f"Downloading: {track.title}...", timeout=5)
 
         def _do_download() -> Optional[str]:
-            import shutil
+            from .core import binaries
 
-            if not shutil.which("ffmpeg"):
+            ffmpeg = binaries.ffmpeg_path()
+            if not ffmpeg:
                 return (
                     "ffmpeg not found — required to convert audio to MP3.\n"
-                    "Install it:  sudo apt install ffmpeg  /  brew install ffmpeg  /  winget install ffmpeg"
+                    + binaries.ffmpeg_hint()
                 )
             try:
                 import yt_dlp
@@ -351,6 +356,7 @@ class EnigmaticApp(App):
                         "preferredcodec": "mp3",
                         "preferredquality": "192",
                     }],
+                    "ffmpeg_location": str(Path(ffmpeg).parent),
                     "quiet": True,
                     "no_warnings": True,
                 }

@@ -11,6 +11,7 @@ from mutagen.wave import WAVE
 from enigmatic_player import cli
 from enigmatic_player.app import EnigmaticApp
 from enigmatic_player.config import Config
+from enigmatic_player.core import binaries as core_binaries
 from enigmatic_player.core.player import MpvPlayer, _SocketIPC
 from enigmatic_player.providers.local import LocalProvider
 
@@ -50,7 +51,7 @@ def test_socket_messages_preserve_boundaries_and_partial_utf8():
 ])
 def test_cli_preserves_urls(monkeypatch, url):
     commands = []
-    monkeypatch.setattr(cli.shutil, "which", lambda _: "/usr/bin/mpv")
+    monkeypatch.setattr(core_binaries, "mpv_path", lambda: "/usr/bin/mpv")
     monkeypatch.setattr(cli.subprocess, "call", lambda args: commands.append(args) or 0)
     assert cli.main(["play", url]) == 0
     assert commands[0][-2:] == ["--", url]
@@ -58,7 +59,7 @@ def test_cli_preserves_urls(monkeypatch, url):
 
 def test_cli_local_paths_and_missing_files(tmp_path, monkeypatch):
     commands = []
-    monkeypatch.setattr(cli.shutil, "which", lambda _: "/usr/bin/mpv")
+    monkeypatch.setattr(core_binaries, "mpv_path", lambda: "/usr/bin/mpv")
     monkeypatch.setattr(cli.subprocess, "call", lambda args: commands.append(args) or 0)
     audio = tmp_path / "-song.wav"
     make_wav(audio)

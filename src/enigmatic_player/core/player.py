@@ -117,6 +117,7 @@ if sys.platform == "win32":
             self._name = name
             self._handle = None
             self._k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            self._buffer = b""
 
         def connect(self) -> None:
             invalid = wintypes.HANDLE(-1).value
@@ -165,9 +166,8 @@ if sys.platform == "win32":
                 self._k32.CloseHandle(ov.hEvent)
 
         def recv_until_newline(self) -> str:
-            buf = ctypes.create_string_buffer(65536)
-            out = []
-            while True:
+            while b"\n" not in self._buffer:
+                buf = ctypes.create_string_buffer(65536)
                 read = wintypes.DWORD(0)
                 ov = _OVERLAPPED()
                 ov.hEvent = self._k32.CreateEventW(None, True, False, None)
@@ -191,14 +191,11 @@ if sys.platform == "win32":
                     # success, read.value bytes available
                     if read.value == 0:
                         raise OSError("mpv pipe closed")
-                    chunk = buf.raw[: read.value]
-                    out.append(chunk.decode("utf-8", "replace"))
-                    if b"\n" in chunk:
-                        break
+                    self._buffer += buf.raw[: read.value]
                 finally:
                     self._k32.CloseHandle(ov.hEvent)
-            text = "".join(out)
-            return text.split("\n")[0]  # single complete line
+            line, self._buffer = self._buffer.split(b"\n", 1)
+            return line.decode("utf-8", "replace")
 
         def close(self) -> None:
             if self._handle:
@@ -255,6 +252,10 @@ class MpvPlayer:
         mpv_bin: Optional[str] = None,
         on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> None:
+        if mpv_bin is None:
+            from .binaries import mpv_path
+
+            mpv_bin = mpv_path()
         self._mpv_bin = shutil.which(mpv_bin or "mpv")
         if not self._mpv_bin:
             raise MpvError(
