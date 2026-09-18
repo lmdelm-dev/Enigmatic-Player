@@ -195,30 +195,9 @@ def _enable_vt_processing() -> bool:
     that refuses the VT flag: that is a legacy-console-mode window which
     would print raw escape codes everywhere.
     """
-    if sys.platform != "win32":
-        return True
-    try:
-        import ctypes
-        from ctypes import wintypes
+    from .core.console import ensure_vt_processing
 
-        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        handle = k32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
-        if not handle or handle == wintypes.HANDLE(-1).value:
-            return False
-        mode = wintypes.DWORD()
-        if not k32.GetConsoleMode(handle, ctypes.byref(mode)):
-            # Not a console handle: an emulator/pty (mintty, VS Code, SSH).
-            # Those interpret ANSI themselves, so allow the TUI.
-            return True
-        mode.value |= 4  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
-        k32.SetConsoleMode(handle, mode.value)
-        # Read back to confirm the flag actually took (legacy conhost ignores it).
-        check = wintypes.DWORD()
-        if not k32.GetConsoleMode(handle, ctypes.byref(check)):
-            return False
-        return bool(check.value & 4)
-    except Exception:  # noqa: BLE001 - best effort only
-        return False
+    return ensure_vt_processing()
 
 
 def _cmd_play(target: str, shuffle: bool = False) -> int:

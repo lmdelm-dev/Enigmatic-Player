@@ -196,10 +196,22 @@ class EnigmaticApp(App):
             self.notify(str(exc), severity="error", timeout=8)
             self.player = None
         self.set_interval(0.1, self._poll)
+        self.set_interval(1.0, self._watch_vt_processing)
         self._queue_refreshed = False
         self._restore_session()
         self._refresh_playlist_sidebar()
         asyncio.create_task(self._load_local())
+
+    def _watch_vt_processing(self) -> None:
+        """conhost can silently drop the VT-processing flag when the window
+        loses focus, gets maximized/restored or resized. Re-assert it and
+        repaint so the screen doesn't devolve into raw escape-code garbage."""
+        from .core import console as core_console
+
+        if core_console.vt_processing_enabled():
+            return
+        if core_console.ensure_vt_processing():
+            self.refresh()
 
     async def _load_local(self) -> None:
         self.notify("Scanning local library…", timeout=2)
