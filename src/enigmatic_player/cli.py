@@ -99,6 +99,7 @@ def _run_tui() -> int:
 
     from .core import binaries
 
+    _cleanup_mouse_state()
     binaries.ensure_engines()
 
     if not _enable_vt_processing():
@@ -142,6 +143,39 @@ def _reset_console_input() -> None:
         mode = wintypes.DWORD()
         if k32.GetConsoleMode(handle, ctypes.byref(mode)):
             k32.SetConsoleMode(handle, mode.value & ~0x200)  # ^VT_INPUT
+    except Exception:  # noqa: BLE001 - best effort only
+        pass
+
+
+def _cleanup_mouse_state() -> None:
+    """Un-poison a console that a killed TUI session left in mouse-reporting mode.
+
+    If a process dies while Textual is running, the console can keep translating
+    every click/move into SGR escape codes (``[<32;19;15M``) that the shell then
+    echoes as garbage — even at a bare cmd/PS prompt. Run at every TUI startup:
+    drop the VT-input flag and send the mouse-disable sequences. The sequences
+    are only written when VT output processing is confirmed on, so a clean
+    console never sees them. Best effort only.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        hin = k32.GetStdHandle(-10)  # STD_INPUT_HANDLE
+        hout = k32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+        mout = wintypes.DWORD()
+        vt_out = k32.GetConsoleMode(hout, ctypes.byref(mout)) and bool(mout.value & 4)
+        min_ = wintypes.DWORD()
+        if k32.GetConsoleMode(hin, ctypes.byref(min_)):
+            k32.SetConsoleMode(hin, min_.value & ~0x200)  # ^ENABLE_VIRTUAL_TERMINAL_INPUT
+        if vt_out:
+            sys.stdout.buffer.write(
+                b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1004l\x1b[?1006l\x1b[?1015l"
+            )
+            sys.stdout.flush()
     except Exception:  # noqa: BLE001 - best effort only
         pass
 
