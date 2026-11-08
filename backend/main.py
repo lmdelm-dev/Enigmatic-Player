@@ -22,14 +22,14 @@ def safe_url(value: str) -> str:
         raise HTTPException(status_code=400, detail="Only YouTube, SoundCloud and Bandcamp URLs are accepted.")
     return value
 
-def public_entry(item):
+def public_entry(item, provider):
     return {
         "id": item.get("id"),
         "title": item.get("title") or "Untitled",
         "artist": item.get("artist") or item.get("uploader") or item.get("channel") or "Unknown artist",
         "uploader": item.get("uploader"),
         "duration": item.get("duration"),
-        "webpage_url": item.get("webpage_url") or item.get("url"),
+        "webpage_url": item.get("webpage_url") or (("https://www.youtube.com/watch?v=" + str(item.get("id"))) if provider == "youtube" and item.get("id") else item.get("url")),
         "url": item.get("url"),
         "thumbnail": item.get("thumbnail"),
     }
@@ -46,7 +46,7 @@ def search(provider: str = Query(...), q: str = Query(..., min_length=1, max_len
         with yt_dlp.YoutubeDL(options()) as ydl:
             info = ydl.extract_info(SEARCH_PREFIX[provider] + q, download=False)
         entries = (info or {}).get("entries") or []
-        return {"provider": provider, "results": [public_entry(x) for x in entries if x]}
+        return {"provider": provider, "results": [public_entry(x, provider) for x in entries if x]}
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Search provider error: {str(exc)[:240]}")
 
