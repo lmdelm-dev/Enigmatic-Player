@@ -1,0 +1,108 @@
+mod app;
+mod audio;
+mod config;
+mod library;
+mod stream;
+mod themes;
+mod ui;
+
+use std::io;
+use std::time::{Duration, Instant};
+
+use ratatui::{
+    backend::CrosstermBackend,
+    crossterm::{
+        event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind, MouseEventKind},
+        execute,
+        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    },
+    Terminal,
+};
+
+fn restore_terminal() {
+    let _ = disable_raw_mode();
+    let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
+}
+
+fn main() -> io::Result<()> {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        restore_terminal();
+        default_hook(info);
+    }));
+
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
+
+    let mut app = app::App::new();
+    let result = run(&mut terminal, &mut app);
+
+    app.shutdown();
+    restore_terminal();
+    let _ = terminal.show_cursor();
+    result
+}
+
+/// Draws only when something changed, and sleeps longer while idle,
+/// so the player uses almost no CPU when paused.
+fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut app::App) -> io::Result<()> {
+    let mut last = Instant::now();
+    let mut dirty = true;
+
+    loop {
+        if app.needs_clear {
+            terminal.clear()?;
+            app.needs_clear = false;
+            dirty = true;
+        }
+        if dirty {
+            terminal.draw(|f| ui::draw(f, app))?;
+            dirty = false;
+        }
+
+        let tick = if app.playing {
+            Duration::from_millis(50)
+        } else {
+            Duration::from_millis(250)
+        };
+        let timeout = tick.saturating_sub(last.elapsed());
+
+        if event::poll(timeout)? {
+            loop {
+                match event::read()? {
+                    Event::Key(k) if k.kind == KeyEventKind::Press => {
+                        app.on_key(k);
+                        dirty = true;
+                    }
+                    Event::Mouse(m) => {
+                        // plain mouse movement is ignored: no redraw storms
+                        if !matches!(m.kind, MouseEventKind::Moved) {
+                            app.on_mouse(m);
+                            dirty = true;
+                        }
+                    }
+                    Event::Resize(_, _) => dirty = true,
+                    _ => {}
+                }
+                if !event::poll(Duration::from_millis(0))? {
+                    break;
+                }
+            }
+        }
+
+        if last.elapsed() >= tick {
+            let dt = last.elapsed().as_secs_f64();
+            last = Instant::now();
+            if app.tick(dt) {
+                dirty = true;
+            }
+        }
+
+        if app.quit {
+            break;
+        }
+    }
+    Ok(())
+}

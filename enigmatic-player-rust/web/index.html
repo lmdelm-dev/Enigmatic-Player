@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Enigmatic Player</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<h1 class="sr-only">Enigmatic Player, a pixel-style terminal music player</h1>
+<div id="px">
+  <div class="titlebar">
+    <span class="dot" style="background:var(--red)"></span><span class="dot" style="background:var(--yellow)"></span><span class="dot" style="background:var(--green)"></span>
+    <span class="dim" style="flex:1;text-align:center">~/music - enigmatic player v1.4</span>
+    <button id="gear" aria-label="Open settings" class="gear">&#9881;&#xFE0E;</button>
+  </div>
+
+  <div class="top">
+    <div class="art">
+      <div id="sky" style="position:absolute;inset:0 0 40% 0"></div>
+      <div id="sun" style="position:absolute;left:36px;top:22px;width:36px;height:36px"></div>
+      <div id="hor" style="position:absolute;left:0;right:0;top:54%;height:10px"></div>
+      <div id="sea" style="position:absolute;left:0;right:0;bottom:0;height:36%"></div>
+    </div>
+    <div class="info">
+      <div>
+        <div class="dim" style="font-size:12px" id="np">now playing - local</div>
+        <div id="title"></div>
+        <div id="artist"></div>
+      </div>
+      <div id="vis"></div>
+    </div>
+  </div>
+
+  <div style="padding:0 16px 10px">
+    <div id="sk" role="slider" aria-label="Seek" tabindex="0">
+      <div id="tip">00:00</div>
+      <div id="skbar"></div>
+      <div id="fill"></div>
+      <div id="head"></div>
+    </div>
+    <div class="row" style="margin-top:2px"><span id="cur">00:00</span>
+      <span style="display:flex;gap:8px">
+        <button class="ctl" id="prev" aria-label="previous track">|&lt;</button>
+        <button class="ctl" id="bk" aria-label="back 10 seconds">-10</button>
+        <button class="ctl" id="pp" aria-label="play or pause">||</button>
+        <button class="ctl" id="fw" aria-label="forward 10 seconds">+10</button>
+        <button class="ctl" id="next" aria-label="next track">&gt;|</button>
+      </span>
+      <span class="dim" id="dur">00:00</span></div>
+  </div>
+
+  <div class="section" style="display:grid;gap:8px">
+    <div class="arow">
+      <button class="chip lab" id="mute" aria-label="Mute or unmute">vol</button>
+      <div class="blks" id="vs" role="slider" aria-label="Volume"></div>
+      <span id="vv" style="width:44px;text-align:right">70%</span>
+    </div>
+    <div class="arow">
+      <span class="dim lab">speed</span>
+      <button class="chip" id="sdn" aria-label="Slower">-</button>
+      <span id="spc" class="chips"></span>
+      <button class="chip" id="sup" aria-label="Faster">+</button>
+      <span id="sv" style="margin-left:auto;color:var(--cyan)">1.00x</span>
+    </div>
+    <div class="arow">
+      <span class="dim lab">reverb</span>
+      <span id="rvc" class="chips"></span>
+      <div class="blks" id="rs" role="slider" aria-label="Reverb amount" style="max-width:160px;margin-left:auto"></div>
+      <span id="rv" style="width:44px;text-align:right">0%</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="color:var(--cyan)">&gt; search</span>
+      <input id="q" type="text" placeholder="song or artist" autocomplete="off" aria-label="Search for a song or artist">
+      <button class="chip" id="clr" aria-label="clear search" style="color:var(--red)">x</button>
+    </div>
+    <div id="chips" class="chips" style="margin-top:8px"></div>
+    <div id="res" style="margin-top:6px"></div>
+  </div>
+
+  <div style="border-top:2px dashed var(--line)">
+    <button id="tog" style="color:var(--yellow);padding:6px 16px"><span id="togi">[-]</span> library <span class="dim">- sources and tracks (tab)</span></button>
+    <div id="lib">
+      <div class="srcs" id="srcs"></div>
+      <div id="tracks" style="padding:6px 0"></div>
+    </div>
+  </div>
+
+  <div class="row status">
+    <span id="st1" style="color:var(--green)"></span>
+    <span id="st2" style="color:var(--purple)"></span>
+    <span class="dim">theme: <span id="thn" style="color:var(--cyan)">tokyonight</span></span>
+  </div>
+
+  <div id="set">
+    <div role="dialog" aria-label="Settings" class="dlg">
+      <div class="row" style="background:var(--panel);padding:4px 6px 4px 14px">
+        <span style="color:var(--yellow)">settings</span>
+        <button id="sx" aria-label="Close settings" style="width:auto;color:var(--red)">[x]</button>
+      </div>
+      <div style="display:flex;flex:1;min-height:0">
+        <div id="snav"></div>
+        <div id="sbody"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="themes.js"></script>
+<script src="library.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
