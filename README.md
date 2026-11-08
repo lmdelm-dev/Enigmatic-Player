@@ -129,3 +129,12 @@ Respect each service's terms of use.
 | `src/library.rs` | Folder scan, tags, yt-dlp search and download |
 | `src/config.rs` | Saved settings |
 | `src/themes.rs` | The 33 themes |
+
+
+## Official website and browser player
+
+The official static website lives at the repository root (`index.html`, `styles.css`, `app.js`). It includes a browser-based companion player that can play audio files selected from your device. Files are handled locally in your browser and are not uploaded.
+
+To publish it with GitHub Pages, open **Settings → Pages**, choose **Deploy from a branch**, select `website/official-and-browser-player` and the `/(root)` folder, then save. GitHub will show the published website URL in that section.
+
+The browser player is intentionally separate from the Rust desktop app: it currently plays local browser-supported audio files and does not yet include the desktop app's online sources or persistent playlists.

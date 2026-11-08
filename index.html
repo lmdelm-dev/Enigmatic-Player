@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090b13">
+  <meta name="description" content="Enigmatic Player is a pixel-inspired music player. Explore the Rust desktop app or play your own music directly in your browser.">
+  <title>Enigmatic Player — Music, without the noise.</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+  <header class="site-header">
+    <a class="brand" href="#" aria-label="Enigmatic Player home"><span class="brand-mark">E<span>_</span></span><span>enigmatic<span class="brand-light">player</span></span></a>
+    <nav aria-label="Main navigation"><a href="#player">Web player</a><a href="#features">Features</a><a href="#desktop">Desktop app</a></nav>
+    <a class="github-link" href="https://github.com/lmdelm-dev/Enigmatic-Player" target="_blank" rel="noreferrer">GitHub <span>↗</span></a>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="pulse"></span> AN OPEN-SOURCE MUSIC EXPERIENCE</div>
+        <h1>Your music.<br><span class="gradient-text">Your atmosphere.</span></h1>
+        <p class="hero-lead">A little bit nostalgic. A lot more personal. Meet a pixel-inspired music player built to make listening feel special again.</p>
+        <div class="hero-actions"><a class="button button-primary" href="#player">Try the web player <span>↓</span></a><a class="button button-quiet" href="#desktop">Explore the desktop app <span>↗</span></a></div>
+        <div class="hero-meta"><span>OPEN SOURCE</span><i></i><span>BUILT WITH RUST</span><i></i><span>MADE FOR MUSIC LOVERS</span></div>
+      </div>
+      <div class="hero-art" aria-label="Abstract pixel-art sunset illustration">
+        <div class="art-window"><div class="art-top"><span></span><span></span><span></span><b>somewhere, after sunset</b></div><div class="pixel-scene"><div class="pixel-sun"></div><div class="pixel-stars">✦　 ·　 ✧　　·</div><div class="pixel-mountain mountain-back"></div><div class="pixel-mountain mountain-front"></div><div class="pixel-water"></div><div class="pixel-reflection"></div></div><div class="art-bottom"><span>NOW PLAYING</span><strong>the quiet between</strong><small>ENIGMATIC PLAYER / 001</small></div></div>
+        <div class="art-orbit orbit-a"></div><div class="art-orbit orbit-b"></div><div class="art-note">♫</div>
+      </div>
+    </section>
+
+    <section class="player-section" id="player">
+      <div class="section-heading"><div><div class="eyebrow">01 / PLAY SOMETHING</div><h2>Your browser, your library.</h2></div><p>Drop in your own audio files. Nothing gets uploaded — your music stays on your device.</p></div>
+      <div class="player-shell">
+        <div class="player-titlebar"><div class="window-dots"><i></i><i></i><i></i></div><span>ENIGMATIC WEB PLAYER <span class="muted">/ LOCAL MODE</span></span><span class="live-status"><i></i> READY</span></div>
+        <div class="player-main">
+          <div class="record-art"><div class="record-glow"></div><div id="record-disc" class="record-disc"><div class="record-label">E<span>✦</span>P</div></div><div class="record-caption">SIDE A · YOUR COLLECTION</div></div>
+          <div class="player-content">
+            <div class="track-kicker"><span class="equalizer-icon"><i></i><i></i><i></i><i></i></span> <span id="track-state">WAITING FOR YOUR MUSIC</span></div>
+            <h3 id="track-title">A quiet place to begin.</h3><p id="track-artist">Choose a song from your device</p>
+            <div class="timeline"><span id="current-time">00:00</span><input id="seek" type="range" min="0" max="100" value="0" aria-label="Seek through track"><span id="total-time">00:00</span></div>
+            <div class="transport"><button id="previous" class="icon-button" aria-label="Previous track">|◀</button><button id="play" class="play-button" aria-label="Play">▶</button><button id="next" class="icon-button" aria-label="Next track">▶|</button><div class="volume-control"><span>VOL</span><input id="volume" type="range" min="0" max="1" step="0.01" value="0.8" aria-label="Volume"></div></div>
+            <canvas id="visualizer" height="76" aria-label="Audio visualizer"></canvas>
+          </div>
+        </div>
+        <div class="library-head"><div><span class="eyebrow">YOUR LIBRARY</span><strong id="track-count">0 TRACKS</strong></div><label class="search-box"><span>⌕</span><input id="filter" type="search" placeholder="Filter your tracks..." aria-label="Filter tracks"></label><label class="add-button" for="file-input">＋ ADD MUSIC</label><input id="file-input" type="file" accept="audio/*" multiple hidden></div>
+        <div id="drop-zone" class="drop-zone"><span class="drop-icon">↥</span><strong>Drop audio files here</strong><span>or use “Add music” to browse your device</span><small>MP3 · WAV · FLAC* · OGG · M4A · AAC <span>*Browser support varies by format</span></small></div>
+        <div id="playlist" class="playlist" aria-live="polite"><div class="empty-library">Your next favourite song is one file away.</div></div>
+        <div class="player-foot"><span>LOCAL PLAYBACK · NO UPLOADS</span><span>MADE FOR THE MOMENT <b>✳</b></span></div>
+      </div>
+      <p class="player-note">This browser player plays audio files you choose on your device. For the full Enigmatic experience — including online sources, playlists, 33 themes and advanced audio controls — explore the Rust desktop app below.</p>
+    </section>
+
+    <section class="features-section" id="features">
+      <div class="section-heading"><div><div class="eyebrow">02 / THE DETAILS</div><h2>Small details. Big feeling.</h2></div><p>Designed around the joy of listening, with a retro soul and modern foundations.</p></div>
+      <div class="feature-grid">
+        <article class="feature-card feature-wide"><div class="feature-visual spectrum-art"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="feature-number">01 — FEEL THE SOUND</div><h3>A spectrum that moves with you.</h3><p>A live audio spectrum brings your music to life, one beat at a time.</p></article>
+        <article class="feature-card"><div class="feature-visual theme-art"><span>◈</span><span>◈</span><span>◈</span><b>33</b></div><div class="feature-number">02 — MAKE IT YOURS</div><h3>33 ways to set the mood.</h3><p>Find a colour palette that feels like yours.</p></article>
+        <article class="feature-card"><div class="feature-visual controls-art"><span>◀</span><b>Ⅱ</b><span>▶</span><div>♪ ━━━━━━━━━</div></div><div class="feature-number">03 — STAY IN CONTROL</div><h3>Every control, close at hand.</h3><p>Seek, adjust speed, shape the reverb and manage your queue.</p></article>
+      </div>
+    </section>
+
+    <section class="desktop-section" id="desktop">
+      <div class="desktop-copy"><div class="eyebrow">03 / THE FULL EXPERIENCE</div><h2>Made for your terminal.<br><span class="gradient-text">Built to go further.</span></h2><p>The original Enigmatic Player is a Rust-powered desktop music player with real audio playback, a real-time spectrum visualizer, local playlists and online music sources.</p><ul class="check-list"><li>Real audio playback powered by Rust</li><li>YouTube, SoundCloud and Bandcamp support via yt-dlp</li><li>33 themes, live reverb and playback speed control</li><li>Local music library and saved playlists</li><li>Lightweight terminal interface</li></ul><div class="hero-actions"><a class="button button-primary" href="https://github.com/lmdelm-dev/Enigmatic-Player/releases/latest" target="_blank" rel="noreferrer">Get the latest release ↗</a><a class="button button-quiet" href="https://github.com/lmdelm-dev/Enigmatic-Player" target="_blank" rel="noreferrer">View source code ↗</a></div></div>
+      <div class="terminal-card"><div class="terminal-head"><span>TERMINAL / ENIGMATIC</span><span>● ● ●</span></div><div class="terminal-body"><div class="terminal-muted">~/projects/enigmatic-player</div><p><span class="terminal-green">$</span> cargo run --release</p><div class="terminal-logo">ＥＮＩＧＭＡＴＩＣ<br><span>Ｐ Ｌ Ａ Ｙ Ｅ Ｒ</span></div><div class="terminal-track"><span>▶</span><div><b>Midnight City</b><small>M83 · Hurry Up, We're Dreaming</small></div><time>04:03</time></div><div class="terminal-bars">▂ ▄ ▆ ▇ ▅ ▃ ▅ ▇ ▆ ▄ ▂ ▅ ▇ ▆ ▄ ▃ ▅ ▇ ▄ ▂</div><div class="terminal-muted">[space] pause　 [← →] seek　 [s] settings</div><div class="terminal-ready"><i></i> PLAYING · 01:42 / 04:03</div></div></div>
+    </section>
+  </main>
+
+  <footer><a class="brand" href="#"><span class="brand-mark">E<span>_</span></span><span>enigmatic<span class="brand-light">player</span></span></a><p>Made with care, for people who love music.</p><div><a href="https://github.com/lmdelm-dev/Enigmatic-Player" target="_blank" rel="noreferrer">GitHub ↗</a><span>© <span id="year"></span> Enigmatic Player</span></div></footer>
+</body>
+</html>
