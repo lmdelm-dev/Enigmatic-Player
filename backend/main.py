@@ -42,11 +42,18 @@ def health():
 def search(provider: str = Query(...), q: str = Query(..., min_length=1, max_length=180)):
     if provider not in SEARCH_PREFIX:
         raise HTTPException(status_code=400, detail="Unsupported provider.")
+    if provider == "bandcamp" and not q.startswith("https://"):
+        raise HTTPException(status_code=400, detail="Bandcamp search is not available. Paste a Bandcamp track or album URL.")
     try:
         with yt_dlp.YoutubeDL(options()) as ydl:
-            info = ydl.extract_info(SEARCH_PREFIX[provider] + q, download=False)
+            target = q if provider == "bandcamp" else SEARCH_PREFIX[provider] + q
+            info = ydl.extract_info(target, download=False)
+        if provider == "bandcamp":
+            return {"provider": provider, "results": [public_entry(info, provider)]}
         entries = (info or {}).get("entries") or []
         return {"provider": provider, "results": [public_entry(x, provider) for x in entries if x]}
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Search provider error: {str(exc)[:240]}")
 
