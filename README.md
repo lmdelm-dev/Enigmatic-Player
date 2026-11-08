@@ -1,140 +1,63 @@
 # Enigmatic Player
 
-A pixel-style terminal music player. Real audio, a real spectrum visualizer, seekable progress bar, block volume, speed, live reverb, search, 33 themes, and a settings window. Made by Jamal Tiliouan. Open source.
+Enigmatic Player is a pixel-terminal music player with a Rust desktop edition and a browser edition.
 
-> Status: v1.6. The streaming and performance changes were written without a compiler. Run `cargo check` first. If it reports errors, they should be small. See `AGENTS.md` for a prompt that fixes them.
+## Web edition
 
-## Requirements
+The web edition recreates the original compact terminal layout and core controls:
 
-- Rust (stable). Install from https://rustup.rs
-- A terminal with true color and at least 80x28 characters
-- Linux only: ALSA headers for audio output
+- 33 color themes from the Rust edition
+- Local audio files and user-selected music folders
+- Play/pause, previous/next, seek, volume, mute, shuffle and repeat
+- Playback speed (0.5x–2.0x)
+- Reverb presets and wet amount through Web Audio
+- Live spectrum visualizer
+- Search/filter, playlists, and keyboard shortcuts
+- Optional online search and stream resolution through the included Python backend
 
-```
-# Debian / Ubuntu
-sudo apt install libasound2-dev pkg-config
-# Fedora
-sudo dnf install alsa-lib-devel
-```
+### Run locally
 
-Optional, for YouTube, SoundCloud and Bandcamp:
+For the browser player, serve the repository root with any static web server. For example:
 
-- `yt-dlp` (search, streaming and saving)
-- `ffmpeg` (decodes streams, converts saved tracks to mp3)
-
-Keep yt-dlp up to date (`yt-dlp -U` or `pip install -U yt-dlp`). Most "service busy" and failed-search problems come from an old yt-dlp.
-
-## Run
-
-```
-cargo run --release
+```bash
+python -m http.server 8080
 ```
 
-On first start it scans `~/Music/enigmatic-player`. Change the folder in settings (`s`). Put music files there (mp3, flac, ogg, wav, m4a, aac).
+Open `http://localhost:8080`. You can also publish the root of this repository with GitHub Pages.
 
-## Keys
+Local playback works without a backend. Choose **+ files** or **+ folder** to grant the browser access to your music. Browsers cannot silently scan your disk. Music file handles and object URLs are session-based; playlists and settings are stored in browser local storage.
 
-| Key | Action |
-| --- | --- |
-| `space` | Play or pause |
-| `left` / `right` (or `h` / `l`) | Seek 5 seconds |
-| `up` / `down` (or `k` / `j`) | Move in the list |
-| `enter` | Play. Online tracks stream, no download needed first |
-| `d` | Save an online track into your music folder as high-quality mp3 |
-| `/` | Search. Local search filters live; online sources search on `enter` |
-| `tab` | Hide or show the library |
-| `1` to `5` | Source: local, YouTube, SoundCloud, Bandcamp, playlists |
-| `a` | Add the selected track to a playlist |
-| `A` | Add the track that is playing to a playlist |
-| `-` / `=` | Volume |
-| `m` | Mute |
-| `[` / `]` | Speed down and up by 0.1 (0.5x to 2.0x, also changes pitch like tape) |
-| `r` | Cycle reverb preset |
-| `<` / `>` | Reverb amount |
-| `n` / `p` | Next and previous |
-| `esc` / `backspace` | Leave an open playlist |
-| `c` `R` `x` | In the playlists list: new, rename, delete (press `x` twice) |
-| `J` / `K` | Move a track (or playlist) down / up |
-| `s` | Settings |
-| `q` | Quit |
+### Online sources backend
 
-Mouse: click or drag the progress bar, volume bar and reverb bar. Click the transport buttons, speed chips, reverb chips, sources, tracks (click a selected track to play), the library header, and the settings label.
+The backend uses FastAPI and yt-dlp. It supports YouTube and SoundCloud search. For Bandcamp, paste a Bandcamp track or album URL into the search field; Bandcamp search itself is not provided by yt-dlp.
 
-## Sound goes to the wrong speakers?
+Requirements: Python 3.10+ and a current yt-dlp.
 
-Open settings (`s`), press `tab` to **audio output**, pick your headset or speakers and press `enter`. The song keeps playing on the new device and the choice is saved.
+```bash
+cd backend
+python -m venv .venv
+# Linux/macOS:
+source .venv/bin/activate
+# Windows:
+# .venv\\Scripts\\activate
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
 
-On Linux, if the list only shows hardware names and the headset is missing, set the system output first (`pactl set-default-sink <name>` or `pavucontrol`) and install the ALSA bridge: `sudo apt install pipewire-alsa libasound2-plugins`. Entries named `pulse`, `pipewire` or `default` follow the system output.
+Set the backend URL in the web player's **Settings** (for local testing: `http://localhost:8000`). The health endpoint is `/health`.
 
-## Settings
+To deploy the backend, use the included `backend/Dockerfile` or `render.yaml`. The Render free web service may sleep when idle and can have cold-start delays; free hosting availability and limits can change. Set `ALLOWED_ORIGINS` to your published web app origin when deploying publicly. The default `*` is convenient for local testing, not the preferred production setting.
 
-- **themes**: 33 themes, previewed live as you move through the list
-- **local music**: the folder for your library and downloads
-- **audio output**: choose which speakers or headset the sound plays on
-- **about**: version, author, shortcuts
+**Important browser limitation:** the backend currently resolves provider media URLs and hands them to the browser. Provider URL expiry, CORS restrictions, browser codec support, rate limits, and provider changes can affect playback. A backend does not make third-party sources permanently reliable. Use only content you have permission to stream.
 
-Settings are saved to `config.json` in your config folder (`~/.config/enigmatic-player/` on Linux).
+### Browser vs desktop differences
 
-## Playlists
+The Rust edition uses native audio devices, terminal mouse regions, filesystem scanning, and an ffmpeg-backed stream pipeline. A browser cannot select arbitrary system audio outputs or scan folders without user permission. Browser streaming also depends on provider URLs and supported codecs. Those native-only behaviors cannot be reproduced exactly in a static web page.
 
-Save your favorite songs, from any source, into your own playlists.
+## Rust desktop edition
 
-1. Select a track in local files, in YouTube or SoundCloud results, or inside another playlist, and press `a`. (Press `A` to add the song that is playing.)
-2. Choose a playlist, or choose `+ new playlist`, type a name and press `enter`.
-3. Press `5` to open **playlists**. `enter` opens one, and `enter` on a track plays it. The rest of the playlist becomes the queue, so `n` and `p` move through it. Online tracks stream when their turn comes.
-4. `esc` or `backspace` leaves the playlist.
+The original Rust terminal player remains in `enigmatic-player-rust/`. See its source and Cargo manifest for native requirements and build instructions.
 
-Inside the playlists list: `c` creates one, `R` renames, `x` deletes (press it twice to confirm), `J` / `K` reorder. Inside a playlist: `x` removes the selected track, `J` / `K` move it, and `/` filters it.
+## License
 
-Playlists mix local files and online tracks, and a track can be in several playlists. They are saved to `playlists.json` in your config folder (`~/.config/enigmatic-player/` on Linux), so you can back them up or copy them to another computer. A local file that was moved or deleted shows an error when it is played; the rest of the list keeps working.
-
-## Online sources
-
-- YouTube and SoundCloud: choose the source, press `/`, type, press `enter`.
-- Bandcamp has no search in yt-dlp. Paste a track or album URL after `/`.
-- `enter` on a result **streams** it: yt-dlp fetches the best audio, ffmpeg decodes it to the sound card's sample rate, and playback starts after about a second of audio is ready. You can seek inside the part that has already arrived. `next` and `previous` keep streaming through the results.
-- `d` saves the track to your music folder as mp3 (best quality), in the background. You can save several at once while music plays.
-- If a service answers "busy", "429" or times out, the player retries up to 3 times and shows "service busy, retrying (2/3)".
-- Search results are cached for the session, so repeating a search is instant, and a new search replaces any search still running.
-- Streams use temporary files in your cache folder. They are deleted when you change track and when you quit.
-
-Respect each service's terms of use.
-
-## Performance
-
-- Redraws only when something changed, and sleeps longer when paused, so it idles near zero CPU.
-- Mouse movement is ignored; only clicks, drags and scrolling cause redraws.
-- The library scan is cached (`library.json` in your cache folder) and new files are read in parallel, so startup is fast even for big libraries.
-- The track list only builds the rows you can see.
-- Reverb costs nothing while it is off.
-- Release builds use full link-time optimization and are stripped. Build with `cargo run --release`.
-
-## Audio quality
-
-- Streams are resampled by ffmpeg to your sound card's rate, which avoids a lower-quality second resample.
-- Reverb uses damped comb filters plus allpass diffusers with a stereo spread, and a soft limiter instead of hard clipping.
-- Saved mp3 files use the highest VBR quality.
-- Local files are resampled by the audio library when their rate differs from the card.
-
-## Project layout
-
-| File | Purpose |
-| --- | --- |
-| `src/main.rs` | Terminal setup and main loop |
-| `src/app.rs` | State, keyboard, mouse, background jobs |
-| `src/ui.rs` | All drawing (ratatui) |
-| `src/audio.rs` | Playback engine, live reverb, spectrum analyzer, stream reader |
-| `src/stream.rs` | yt-dlp to ffmpeg streaming pipeline with retries |
-| `src/playlists.rs` | Playlist storage (`playlists.json`) |
-| `src/library.rs` | Folder scan, tags, yt-dlp search and download |
-| `src/config.rs` | Saved settings |
-| `src/themes.rs` | The 33 themes |
-
-
-## Official website and browser player
-
-The official static website lives at the repository root (`index.html`, `styles.css`, `app.js`). It includes a browser-based companion player that can play audio files selected from your device. Files are handled locally in your browser and are not uploaded.
-
-To publish it with GitHub Pages, open **Settings → Pages**, choose **Deploy from a branch**, select `website/official-and-browser-player` and the `/(root)` folder, then save. GitHub will show the published website URL in that section.
-
-The browser player is intentionally separate from the Rust desktop app: it currently plays local browser-supported audio files and does not yet include the desktop app's online sources or persistent playlists.
+See the repository license file.
