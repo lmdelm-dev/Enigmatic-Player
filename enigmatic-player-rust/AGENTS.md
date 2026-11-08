@@ -1,7 +1,7 @@
 # AGENTS.md - guide for AI coding assistants
 
 Project: Enigmatic Player, a pixel-style terminal music player in Rust.
-Version 1.5. Stack: ratatui 0.28 (re-exports crossterm as `ratatui::crossterm`), rodio 0.19 with symphonia, lofty 0.21 for tags, walkdir, serde, dirs.
+Version 1.6. Stack: ratatui 0.28 (re-exports crossterm as `ratatui::crossterm`), rodio 0.19 with symphonia, lofty 0.21 for tags, walkdir, serde, dirs.
 
 ## First task: make it compile
 
@@ -27,6 +27,7 @@ If a crate version is the problem, change the version in `Cargo.toml` instead of
 - `stream.rs`: online playback. yt-dlp (stdout) -> ffmpeg -> raw s16le PCM appended to a cache file by a worker thread. Shared atomics: `written` (bytes), `consumed` (samples played), `done`, `kill`. Retries on transient errors (`library::is_transient`). `audio::PcmSource` reads the growing file, outputs silence while waiting, supports seeking by byte offset.
 - `audio.rs`: `Engine` owns the rodio sink. `FxSource` wraps the decoded audio: a four-comb reverb whose amount and preset are shared atomics (live changes), plus a tap that feeds a spectrum analyzer (Goertzel over 1024 samples, 14 bands). Speed uses `Sink::set_speed` (changes pitch). Seeking tries `try_seek`, then falls back to re-opening the file and skipping.
 - `library.rs`: scan, tags, yt-dlp search and download.
+- `playlists.rs`: `Playlist { name, tracks }`, saved as JSON through a temp file. In `app.rs`, playlists are source index `PLAYLISTS` (4) in `Provider::ALL`. `open_list: Option<usize>` is the opened playlist (None = the list of playlists). `rows()` is the row count of the current view, `list()` the tracks. Modes `Pick` (choose where to add) and `Name` (new/rename) drive two popups drawn in `ui.rs`.
 - `config.rs`: JSON config in the user config folder.
 - `themes.rs`: 33 themes, each `[bg, panel, sel, line, text, dim, red, cyan, green, purple, yellow]`.
 
@@ -34,6 +35,7 @@ If a crate version is the problem, change the version in `Cargo.toml` instead of
 
 - No hardcoded colors in `ui.rs`. Use the theme fields.
 - Keep the pixel look: block characters, thick borders, lowercase labels.
+- Any change to the playlists view must keep `rows()`, `list()` and the drawing code in `draw_library` consistent.
 - Keep keyboard shortcuts in sync in three places: `key_normal`, the About tab in `ui.rs`, and `README.md`.
 - Never block the UI thread. Use a thread and a `Msg`.
 - Redraw only when `App::tick` or an input event says something changed (`dirty` in `main.rs`). Do not add per-frame work that runs while idle.
@@ -47,7 +49,8 @@ If a crate version is the problem, change the version in `Cargo.toml` instead of
 3. Playlist queue view and shuffle/repeat (the status bar already reserves space).
 4. Album art from tags, shown with half-block pixels.
 5. MPRIS / media keys on Linux.
-6. Unit tests for `library::scan`, `config` and the reverb source.
+6. Playlist extras: play shuffled, import/export m3u, per-playlist play counts.
+7. Unit tests for `library::scan`, `config` and the reverb source.
 
 ## Prompts to paste
 

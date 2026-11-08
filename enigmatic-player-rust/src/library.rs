@@ -13,14 +13,16 @@ pub enum Provider {
     YouTube,
     SoundCloud,
     Bandcamp,
+    Playlists,
 }
 
 impl Provider {
-    pub const ALL: [Provider; 4] = [
+    pub const ALL: [Provider; 5] = [
         Provider::Local,
         Provider::YouTube,
         Provider::SoundCloud,
         Provider::Bandcamp,
+        Provider::Playlists,
     ];
 
     pub fn tag(self) -> &'static str {
@@ -29,6 +31,7 @@ impl Provider {
             Provider::YouTube => "Y",
             Provider::SoundCloud => "S",
             Provider::Bandcamp => "B",
+            Provider::Playlists => "P",
         }
     }
 
@@ -38,6 +41,7 @@ impl Provider {
             Provider::YouTube => "youtube",
             Provider::SoundCloud => "soundcloud",
             Provider::Bandcamp => "bandcamp",
+            Provider::Playlists => "playlists",
         }
     }
 }

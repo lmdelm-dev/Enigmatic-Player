@@ -12,6 +12,7 @@ use ratatui::{
 use crate::audio::{self, Engine};
 use crate::config::{expand, Config};
 use crate::library::{self, Provider, Track};
+use crate::playlists::{self, Playlist};
 use crate::stream::{self, Stream};
 use crate::themes::{self, THEMES};
 
@@ -22,6 +23,8 @@ pub const SPEEDS: [f32; 16] = [
 pub const NB_VOL: usize = 16;
 pub const NB_RV: usize = 8;
 pub const BANDS: usize = 14;
+/// Index of the playlists source in Provider::ALL.
+pub const PLAYLISTS: usize = 4;
 pub const PICKS: [&str; 4] = [
     "~/Music/enigmatic-player",
     "~/Music",
@@ -34,6 +37,8 @@ pub enum Mode {
     Normal,
     Search,
     Settings,
+    Pick,
+    Name,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -105,6 +110,14 @@ pub struct App {
     pub devices: Vec<String>,
     pub dev_state: ListState,
     pub needs_clear: bool,
+    pub playlists: Vec<Playlist>,
+    pub open_list: Option<usize>,
+    pub pick_state: ListState,
+    pub pending: Option<Track>,
+    pub name_input: String,
+    pub name_err: Option<String>,
+    pub rename: Option<usize>,
+    confirm_del: Option<usize>,
     pub hit: Hit,
     pub quit: bool,
     search_gen: u64,
@@ -201,6 +214,14 @@ impl App {
             devices: Vec::new(),
             dev_state: ListState::default(),
             needs_clear: false,
+            playlists: playlists::load(),
+            open_list: None,
+            pick_state: ListState::default(),
+            pending: None,
+            name_input: String::new(),
+            name_err: None,
+            rename: None,
+            confirm_del: None,
             hit: Hit::default(),
             quit: false,
             search_gen: 0,
@@ -247,13 +268,33 @@ impl App {
                 .iter()
                 .filter(|t| q.is_empty() || t.key.contains(&q))
                 .collect()
+        } else if self.source == PLAYLISTS {
+            match self.open_list.and_then(|i| self.playlists.get(i)) {
+                Some(p) => {
+                    let q = self.query.to_lowercase();
+                    p.tracks
+                        .iter()
+                        .filter(|t| q.is_empty() || t.key.contains(&q))
+                        .collect()
+                }
+                None => Vec::new(),
+            }
         } else {
             self.remote.iter().collect()
         }
     }
 
+    /// Number of rows in the current view (playlists, or tracks).
+    pub fn rows(&self) -> usize {
+        if self.source == PLAYLISTS && self.open_list.is_none() {
+            self.playlists.len()
+        } else {
+            self.list().len()
+        }
+    }
+
     fn fix_sel(&mut self) {
-        let n = self.list().len();
+        let n = self.rows();
         if n == 0 {
             self.sel = 0;
         } else if self.sel >= n {
@@ -262,7 +303,7 @@ impl App {
     }
 
     fn move_sel(&mut self, d: isize) {
-        let n = self.list().len();
+        let n = self.rows();
         if n == 0 {
             self.sel = 0;
             return;
@@ -277,15 +318,17 @@ impl App {
         self.source = i;
         self.sel = 0;
         self.scroll = 0;
-        if i != 0 && !self.have_ytdlp {
-            self.status = "yt-dlp not found. Install it to use online sources.".into();
-        } else if Provider::ALL[i] == Provider::Bandcamp {
-            self.status = "bandcamp: press / and paste a track or album url".into();
-        } else if i != 0 {
-            self.status = "press / to search, then enter".into();
-        } else {
-            self.status.clear();
+        let p = Provider::ALL[i];
+        if p == Provider::Playlists {
+            self.open_list = None;
         }
+        self.status = match p {
+            Provider::Local => String::new(),
+            Provider::Playlists => "enter opens a playlist. select a track and press a to add it".into(),
+            _ if !self.have_ytdlp => "yt-dlp not found. Install it to use online sources.".into(),
+            Provider::Bandcamp => "bandcamp: press / and paste a track or album url".into(),
+            _ => "press / to search, then enter".into(),
+        };
     }
 
     fn start_search(&mut self) {
@@ -540,6 +583,15 @@ impl App {
     }
 
     fn activate(&mut self, play: bool) {
+        if self.source == PLAYLISTS && self.open_list.is_none() {
+            if play && self.sel < self.playlists.len() {
+                self.open_list = Some(self.sel);
+                self.sel = 0;
+                self.scroll = 0;
+                self.query.clear();
+            }
+            return;
+        }
         let (tracks, chosen) = {
             let l = self.list();
             (
@@ -692,16 +744,22 @@ impl App {
             Mode::Normal => self.key_normal(k),
             Mode::Search => self.key_search(k),
             Mode::Settings => self.key_settings(k),
+            Mode::Pick => self.key_pick(k),
+            Mode::Name => self.key_name(k),
         }
     }
 
     fn key_normal(&mut self, k: KeyEvent) {
+        if k.code != KeyCode::Char('x') {
+            self.confirm_del = None;
+        }
         match k.code {
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('/') => self.mode = Mode::Search,
             KeyCode::Char('s') | KeyCode::Char(',') => self.open_settings(),
             KeyCode::Tab => self.lib_open = !self.lib_open,
             KeyCode::Char(' ') => self.toggle_play(),
+            KeyCode::Char('h') if k.modifiers.contains(KeyModifiers::CONTROL) => self.close_list(),
             KeyCode::Left | KeyCode::Char('h') => self.seek_by(-5.0),
             KeyCode::Right | KeyCode::Char('l') => self.seek_by(5.0),
             KeyCode::Up | KeyCode::Char('k') => self.move_sel(-1),
@@ -720,7 +778,25 @@ impl App {
             KeyCode::Char('>') => self.set_wet(self.cfg.wet + 5),
             KeyCode::Char('n') => self.next(1),
             KeyCode::Char('p') => self.prev(),
-            KeyCode::Char(c @ '1'..='4') => self.set_source(c as usize - '1' as usize),
+            KeyCode::Char('a') => self.begin_add(false),
+            KeyCode::Char('A') => self.begin_add(true),
+            KeyCode::Char('c') => {
+                if self.source == PLAYLISTS && self.open_list.is_none() {
+                    self.pending = None;
+                    self.open_name(None, String::new());
+                }
+            }
+            KeyCode::Char('R') => {
+                if self.source == PLAYLISTS && self.open_list.is_none() && self.sel < self.playlists.len() {
+                    let n = self.playlists[self.sel].name.clone();
+                    self.open_name(Some(self.sel), n);
+                }
+            }
+            KeyCode::Char('x') => self.remove_selected(),
+            KeyCode::Char('J') => self.move_item(1),
+            KeyCode::Char('K') => self.move_item(-1),
+            KeyCode::Backspace | KeyCode::Esc => self.close_list(),
+            KeyCode::Char(c @ '1'..='5') => self.set_source(c as usize - '1' as usize),
             _ => {}
         }
     }
@@ -735,7 +811,7 @@ impl App {
             }
             KeyCode::Enter => {
                 self.mode = Mode::Normal;
-                if self.source != 0 {
+                if self.source != 0 && self.source != PLAYLISTS {
                     self.start_search();
                 }
             }
@@ -746,6 +822,208 @@ impl App {
                     self.sel = 0;
                     self.scroll = 0;
                 }
+            }
+        }
+    }
+
+    // ---------- playlists ----------
+
+    fn save_lists(&self) {
+        playlists::save(&self.playlists);
+    }
+
+    fn open_name(&mut self, rename: Option<usize>, text: String) {
+        self.rename = rename;
+        self.name_input = text;
+        self.name_err = None;
+        self.mode = Mode::Name;
+    }
+
+    /// `a` adds the selected track, `A` adds the track that is playing.
+    fn begin_add(&mut self, use_now: bool) {
+        let t: Option<Track> = if use_now {
+            self.now.clone()
+        } else if self.source == PLAYLISTS && self.open_list.is_none() {
+            None
+        } else {
+            let l = self.list();
+            let r = l.get(self.sel).map(|t| (*t).clone());
+            r
+        };
+        let Some(t) = t else {
+            self.status = "nothing to add: select a track first".into();
+            return;
+        };
+        if t.path.is_none() && t.url.is_none() {
+            return;
+        }
+        self.pending = Some(t);
+        if self.playlists.is_empty() {
+            self.open_name(None, String::new());
+        } else {
+            self.pick_state.select(Some(0));
+            self.mode = Mode::Pick;
+        }
+    }
+
+    fn add_pending(&mut self, idx: usize) {
+        let Some(t) = self.pending.take() else { return };
+        let Some(pl) = self.playlists.get_mut(idx) else { return };
+        if pl.contains(&t) {
+            self.status = format!("already in {}", pl.name);
+            return;
+        }
+        let name = pl.name.clone();
+        pl.tracks.push(t);
+        self.save_lists();
+        self.status = format!("added to {name}");
+    }
+
+    fn key_pick(&mut self, k: KeyEvent) {
+        let n = self.playlists.len() + 1;
+        let cur = self.pick_state.selected().unwrap_or(0);
+        match k.code {
+            KeyCode::Esc => {
+                self.pending = None;
+                self.mode = Mode::Normal;
+            }
+            KeyCode::Up | KeyCode::Char('k') => self.pick_state.select(Some((cur + n - 1) % n)),
+            KeyCode::Down | KeyCode::Char('j') => self.pick_state.select(Some((cur + 1) % n)),
+            KeyCode::Enter => {
+                if cur == 0 {
+                    self.open_name(None, String::new());
+                } else {
+                    self.add_pending(cur - 1);
+                    self.mode = Mode::Normal;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn key_name(&mut self, k: KeyEvent) {
+        match k.code {
+            KeyCode::Esc => {
+                self.pending = None;
+                self.mode = Mode::Normal;
+            }
+            KeyCode::Enter => self.commit_name(),
+            _ => {
+                if edit_text(&mut self.name_input, &k) {
+                    self.name_err = None;
+                    if self.name_input.chars().count() > 40 {
+                        self.name_input.pop();
+                    }
+                }
+            }
+        }
+    }
+
+    fn commit_name(&mut self) {
+        let name = self.name_input.trim().to_string();
+        if name.is_empty() {
+            self.name_err = Some("Type a name first.".into());
+            return;
+        }
+        let taken = self
+            .playlists
+            .iter()
+            .enumerate()
+            .any(|(i, p)| p.name.to_lowercase() == name.to_lowercase() && Some(i) != self.rename);
+        if taken {
+            self.name_err = Some("A playlist with that name already exists.".into());
+            return;
+        }
+        match self.rename {
+            Some(i) => {
+                if let Some(p) = self.playlists.get_mut(i) {
+                    p.name = name.clone();
+                }
+                self.status = format!("renamed to {name}");
+            }
+            None => {
+                self.playlists.push(Playlist { name: name.clone(), tracks: Vec::new() });
+                let idx = self.playlists.len() - 1;
+                self.status = format!("created {name}");
+                if self.pending.is_some() {
+                    self.add_pending(idx);
+                }
+            }
+        }
+        self.save_lists();
+        self.mode = Mode::Normal;
+    }
+
+    /// `x`: remove the selected track, or delete the selected playlist (press twice).
+    fn remove_selected(&mut self) {
+        if self.source != PLAYLISTS {
+            return;
+        }
+        match self.open_list {
+            Some(i) => {
+                if !self.query.is_empty() {
+                    self.status = "clear the search first (esc), then remove".into();
+                    return;
+                }
+                let n = self.playlists.get(i).map(|p| p.tracks.len()).unwrap_or(0);
+                if self.sel < n {
+                    let t = self.playlists[i].tracks.remove(self.sel);
+                    self.status = format!("removed: {}", t.title);
+                    self.save_lists();
+                    self.fix_sel();
+                }
+            }
+            None => {
+                if self.sel >= self.playlists.len() {
+                    return;
+                }
+                if self.confirm_del == Some(self.sel) {
+                    let p = self.playlists.remove(self.sel);
+                    self.confirm_del = None;
+                    self.status = format!("deleted playlist: {}", p.name);
+                    self.save_lists();
+                    self.fix_sel();
+                } else {
+                    self.confirm_del = Some(self.sel);
+                    self.status = format!("press x again to delete \"{}\"", self.playlists[self.sel].name);
+                }
+            }
+        }
+    }
+
+    /// `J` / `K`: move the selected track (or playlist) down / up.
+    fn move_item(&mut self, d: isize) {
+        if self.source != PLAYLISTS || !self.query.is_empty() {
+            return;
+        }
+        let a = self.sel;
+        let b = a as isize + d;
+        match self.open_list {
+            Some(i) => {
+                let n = self.playlists.get(i).map(|p| p.tracks.len()).unwrap_or(0);
+                if b < 0 || b >= n as isize || a >= n {
+                    return;
+                }
+                self.playlists[i].tracks.swap(a, b as usize);
+            }
+            None => {
+                let n = self.playlists.len();
+                if b < 0 || b >= n as isize || a >= n {
+                    return;
+                }
+                self.playlists.swap(a, b as usize);
+            }
+        }
+        self.sel = b as usize;
+        self.save_lists();
+    }
+
+    fn close_list(&mut self) {
+        if self.source == PLAYLISTS {
+            if let Some(i) = self.open_list.take() {
+                self.sel = i;
+                self.scroll = 0;
+                self.query.clear();
             }
         }
     }
@@ -922,7 +1200,7 @@ impl App {
     // ---------- mouse ----------
 
     pub fn on_mouse(&mut self, m: MouseEvent) {
-        if self.mode == Mode::Settings {
+        if self.mode != Mode::Normal && self.mode != Mode::Search {
             return;
         }
         let (x, y) = (m.column, m.row);
@@ -996,7 +1274,7 @@ impl App {
         }
         if inside(self.hit.tracks, x, y) {
             let idx = self.hit.tracks_offset + (y - self.hit.tracks.y) as usize;
-            if idx < self.list().len() {
+            if idx < self.rows() {
                 if idx == self.sel {
                     self.activate(true);
                 } else {

@@ -2,7 +2,7 @@
 
 A pixel-style terminal music player. Real audio, a real spectrum visualizer, seekable progress bar, block volume, speed, live reverb, search, 33 themes, and a settings window. Made by Jamal Tiliouan. Open source.
 
-> Status: v1.5. The streaming and performance changes were written without a compiler. Run `cargo check` first. If it reports errors, they should be small. See `AGENTS.md` for a prompt that fixes them.
+> Status: v1.6. The streaming and performance changes were written without a compiler. Run `cargo check` first. If it reports errors, they should be small. See `AGENTS.md` for a prompt that fixes them.
 
 ## Requirements
 
@@ -43,13 +43,18 @@ On first start it scans `~/Music/enigmatic-player`. Change the folder in setting
 | `d` | Save an online track into your music folder as high-quality mp3 |
 | `/` | Search. Local search filters live; online sources search on `enter` |
 | `tab` | Hide or show the library |
-| `1` to `4` | Source: local, YouTube, SoundCloud, Bandcamp |
+| `1` to `5` | Source: local, YouTube, SoundCloud, Bandcamp, playlists |
+| `a` | Add the selected track to a playlist |
+| `A` | Add the track that is playing to a playlist |
 | `-` / `=` | Volume |
 | `m` | Mute |
 | `[` / `]` | Speed down and up by 0.1 (0.5x to 2.0x, also changes pitch like tape) |
 | `r` | Cycle reverb preset |
 | `<` / `>` | Reverb amount |
 | `n` / `p` | Next and previous |
+| `esc` / `backspace` | Leave an open playlist |
+| `c` `R` `x` | In the playlists list: new, rename, delete (press `x` twice) |
+| `J` / `K` | Move a track (or playlist) down / up |
 | `s` | Settings |
 | `q` | Quit |
 
@@ -69,6 +74,19 @@ On Linux, if the list only shows hardware names and the headset is missing, set 
 - **about**: version, author, shortcuts
 
 Settings are saved to `config.json` in your config folder (`~/.config/enigmatic-player/` on Linux).
+
+## Playlists
+
+Save your favorite songs, from any source, into your own playlists.
+
+1. Select a track in local files, in YouTube or SoundCloud results, or inside another playlist, and press `a`. (Press `A` to add the song that is playing.)
+2. Choose a playlist, or choose `+ new playlist`, type a name and press `enter`.
+3. Press `5` to open **playlists**. `enter` opens one, and `enter` on a track plays it. The rest of the playlist becomes the queue, so `n` and `p` move through it. Online tracks stream when their turn comes.
+4. `esc` or `backspace` leaves the playlist.
+
+Inside the playlists list: `c` creates one, `R` renames, `x` deletes (press it twice to confirm), `J` / `K` reorder. Inside a playlist: `x` removes the selected track, `J` / `K` move it, and `/` filters it.
+
+Playlists mix local files and online tracks, and a track can be in several playlists. They are saved to `playlists.json` in your config folder (`~/.config/enigmatic-player/` on Linux), so you can back them up or copy them to another computer. A local file that was moved or deleted shows an error when it is played; the rest of the list keeps working.
 
 ## Online sources
 
@@ -107,6 +125,7 @@ Respect each service's terms of use.
 | `src/ui.rs` | All drawing (ratatui) |
 | `src/audio.rs` | Playback engine, live reverb, spectrum analyzer, stream reader |
 | `src/stream.rs` | yt-dlp to ffmpeg streaming pipeline with retries |
+| `src/playlists.rs` | Playlist storage (`playlists.json`) |
 | `src/library.rs` | Folder scan, tags, yt-dlp search and download |
 | `src/config.rs` | Saved settings |
 | `src/themes.rs` | The 33 themes |

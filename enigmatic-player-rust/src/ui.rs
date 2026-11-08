@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, Btn, Mode, BANDS, NB_RV, NB_VOL, REVERBS, SPEEDS};
+use crate::app::{App, Btn, Mode, BANDS, NB_RV, NB_VOL, PLAYLISTS, REVERBS, SPEEDS};
 use crate::library::{Provider, Track};
 use crate::themes::{Theme, THEMES};
 
@@ -178,8 +178,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     draw_library(f, app, &t, rows[5]);
     draw_status(f, app, &t, rows[7]);
 
-    if app.mode == Mode::Settings {
-        draw_settings(f, app, &t, full);
+    match app.mode {
+        Mode::Settings => draw_settings(f, app, &t, full),
+        Mode::Pick => draw_picker(f, app, &t, full),
+        Mode::Name => draw_name(f, app, &t, full),
+        _ => {}
     }
 }
 
@@ -191,7 +194,7 @@ fn draw_titlebar(f: &mut Frame, app: &mut App, t: &Theme, r: Rect) {
     row.put("● ", Style::default().fg(t.red).bg(t.panel));
     row.put("● ", Style::default().fg(t.yellow).bg(t.panel));
     row.put("● ", Style::default().fg(t.green).bg(t.panel));
-    row.put(" ~/music - enigmatic player v1.5", bar);
+    row.put(" ~/music - enigmatic player v1.6", bar);
     f.render_widget(Paragraph::new(row.line()), r);
 
     let label = "[ s: settings ] ";
@@ -440,7 +443,7 @@ fn draw_search(f: &mut Frame, app: &mut App, t: &Theme, r: Rect) {
     );
 
     let msg = if app.status.is_empty() {
-        "keys: / search  enter play  d save  1-4 source  s settings  q quit".to_string()
+        "keys: / search  enter play  a playlist  d save  1-5 source  s settings  q quit".to_string()
     } else {
         app.status.clone()
     };
@@ -467,7 +470,17 @@ fn draw_library(f: &mut Frame, app: &mut App, t: &Theme, r: Rect) {
         format!("[{}] library", if app.lib_open { "-" } else { "+" }),
         fg(t, t.yellow),
     );
-    row.put(" - sources and tracks (tab)", fg(t, t.dim));
+    let opened = if app.source == PLAYLISTS {
+        app.open_list
+            .and_then(|i| app.playlists.get(i))
+            .map(|p| format!(" > {} (esc: back)", p.name))
+    } else {
+        None
+    };
+    row.put(
+        opened.unwrap_or_else(|| " - sources and tracks (tab)".to_string()),
+        fg(t, t.dim),
+    );
     f.render_widget(Paragraph::new(row.line()), header);
 
     if !app.lib_open || inner.height < 2 {
@@ -497,8 +510,13 @@ fn draw_library(f: &mut Frame, app: &mut App, t: &Theme, r: Rect) {
             Provider::YouTube => t.red,
             Provider::SoundCloud => t.yellow,
             Provider::Bandcamp => t.cyan,
+            Provider::Playlists => t.purple,
         };
-        let count = if i == 0 { format!(" ({})", app.local.len()) } else { String::new() };
+        let count = match p {
+            Provider::Local => format!(" ({})", app.local.len()),
+            Provider::Playlists => format!(" ({})", app.playlists.len()),
+            _ => String::new(),
+        };
         let rr = Rect::new(sin.x, y, sin.width, 1);
         let mut rb = RowB::new(rr.x, y);
         rb.put(if selected { "> " } else { "  " }, Style::default().fg(t.red).bg(bg));
@@ -516,22 +534,31 @@ fn draw_library(f: &mut Frame, app: &mut App, t: &Theme, r: Rect) {
     // tracks: only the visible rows are built, so huge libraries stay fast
     let area = cols[1];
     let hgt = area.height as usize;
-    let total = app.list().len();
+    let total = app.rows();
+    let in_overview = app.source == PLAYLISTS && app.open_list.is_none();
 
     if total == 0 {
         let provider = Provider::ALL[app.source];
-        let msg = if app.source == 0 {
-            if app.query.is_empty() {
-                format!("no tracks in {}\nset the folder in settings (s)", app.cfg.dir)
-            } else {
-                "no matches. try an artist name.".to_string()
+        let msg = match provider {
+            Provider::Local => {
+                if app.query.is_empty() {
+                    format!("no tracks in {}\nset the folder in settings (s)", app.cfg.dir)
+                } else {
+                    "no matches. try an artist name.".to_string()
+                }
             }
-        } else if !app.have_ytdlp {
-            "yt-dlp not found. install it to use this source.".to_string()
-        } else if provider == Provider::Bandcamp {
-            "press / and paste a bandcamp track or album url".to_string()
-        } else {
-            format!("press / to search {}, then enter", provider.name())
+            Provider::Playlists => {
+                if in_overview {
+                    "no playlists yet.\nselect a track and press a to start one,\nor press c here.".to_string()
+                } else if app.query.is_empty() {
+                    "this playlist is empty.\nselect a track in any source and press a.".to_string()
+                } else {
+                    "no matches.".to_string()
+                }
+            }
+            _ if !app.have_ytdlp => "yt-dlp not found. install it to use this source.".to_string(),
+            Provider::Bandcamp => "press / and paste a bandcamp track or album url".to_string(),
+            _ => format!("press / to search {}, then enter", provider.name()),
         };
         f.render_widget(
             Paragraph::new(msg).style(fg(t, t.dim)),
@@ -556,30 +583,53 @@ fn draw_library(f: &mut Frame, app: &mut App, t: &Theme, r: Rect) {
     }
 
     let items: Vec<ListItem<'static>> = {
-        let tracks = app.list();
-        let now = app.now.as_ref();
         let wd = area.width as usize;
         let end = (app.scroll + hgt).min(total);
-        tracks[app.scroll..end]
-            .iter()
-            .enumerate()
-            .map(|(i, tr)| {
-                let playing = now.map(|n| same(n, tr)).unwrap_or(false);
-                let marker = if playing { ">" } else { " " };
-                let dur = if tr.secs > 0.0 { fmt_time(tr.secs) } else { "--:--".to_string() };
-                let avail = wd.saturating_sub(dur.chars().count() + 2);
-                let left = trunc(
-                    &format!("{} {:02}  {} - {}", marker, app.scroll + i + 1, tr.title, tr.artist),
-                    avail,
-                );
-                let padn = avail.saturating_sub(left.chars().count());
-                let st = if playing { fg(t, t.red) } else { fg(t, t.text) };
-                ListItem::new(Line::from(vec![
-                    Span::styled(format!("{}{} ", left, " ".repeat(padn)), st),
-                    Span::styled(dur, fg(t, t.dim)),
-                ]))
-            })
-            .collect()
+        if in_overview {
+            app.playlists[app.scroll..end]
+                .iter()
+                .enumerate()
+                .map(|(i, pl)| {
+                    let secs = pl.total_secs();
+                    let right = if secs > 0.0 { fmt_time(secs) } else { "--:--".to_string() };
+                    let n = pl.tracks.len();
+                    let word = if n == 1 { "track" } else { "tracks" };
+                    let avail = wd.saturating_sub(right.chars().count() + 2);
+                    let left = trunc(
+                        &format!("  {:02}  {}  ({} {})", app.scroll + i + 1, pl.name, n, word),
+                        avail,
+                    );
+                    let padn = avail.saturating_sub(left.chars().count());
+                    ListItem::new(Line::from(vec![
+                        Span::styled(format!("{}{} ", left, " ".repeat(padn)), fg(t, t.text)),
+                        Span::styled(right, fg(t, t.dim)),
+                    ]))
+                })
+                .collect()
+        } else {
+            let tracks = app.list();
+            let now = app.now.as_ref();
+            tracks[app.scroll..end]
+                .iter()
+                .enumerate()
+                .map(|(i, tr)| {
+                    let playing = now.map(|n| same(n, tr)).unwrap_or(false);
+                    let marker = if playing { ">" } else { " " };
+                    let dur = if tr.secs > 0.0 { fmt_time(tr.secs) } else { "--:--".to_string() };
+                    let avail = wd.saturating_sub(dur.chars().count() + 2);
+                    let left = trunc(
+                        &format!("{} {:02}  {} - {}", marker, app.scroll + i + 1, tr.title, tr.artist),
+                        avail,
+                    );
+                    let padn = avail.saturating_sub(left.chars().count());
+                    let st = if playing { fg(t, t.red) } else { fg(t, t.text) };
+                    ListItem::new(Line::from(vec![
+                        Span::styled(format!("{}{} ", left, " ".repeat(padn)), st),
+                        Span::styled(dur, fg(t, t.dim)),
+                    ]))
+                })
+                .collect()
+        }
     };
 
     let mut st = ListState::default().with_selected(Some(app.sel - app.scroll));
@@ -612,7 +662,7 @@ fn draw_status(f: &mut Frame, app: &mut App, t: &Theme, r: Rect) {
 
 fn draw_settings(f: &mut Frame, app: &mut App, t: &Theme, area: Rect) {
     let w = 72u16.min(area.width.saturating_sub(2));
-    let h = 24u16.min(area.height.saturating_sub(2));
+    let h = 28u16.min(area.height.saturating_sub(2));
     let pop = Rect::new(area.x + (area.width - w) / 2, area.y + (area.height - h) / 2, w, h);
     f.render_widget(Clear, pop);
 
@@ -752,7 +802,7 @@ fn draw_settings(f: &mut Frame, app: &mut App, t: &Theme, area: Rect) {
                 Line::from(""),
                 Line::from(vec![
                     Span::styled("version   ", fg(t, t.dim)),
-                    Span::styled("v1.5", base(t)),
+                    Span::styled("v1.6", base(t)),
                 ]),
                 Line::from(vec![
                     Span::styled("made by   ", fg(t, t.dim)),
@@ -770,7 +820,10 @@ fn draw_settings(f: &mut Frame, app: &mut App, t: &Theme, area: Rect) {
                 key("d", "save online track as mp3"),
                 key("/", "search"),
                 key("tab", "hide or show library"),
-                key("1-4", "choose source"),
+                key("1-5", "choose source (5 = playlists)"),
+                key("a / A", "add selected / playing track to a playlist"),
+                key("c R x", "playlists: new, rename, delete"),
+                key("J / K", "move track or playlist down / up"),
                 key("- / =", "volume"),
                 key("m", "mute"),
                 key("[ / ]", "slower and faster"),
@@ -781,4 +834,78 @@ fn draw_settings(f: &mut Frame, app: &mut App, t: &Theme, area: Rect) {
             f.render_widget(Paragraph::new(lines), content);
         }
     }
+}
+
+fn centered(area: Rect, w: u16, h: u16) -> Rect {
+    let w = w.min(area.width.saturating_sub(2));
+    let h = h.min(area.height.saturating_sub(2));
+    Rect::new(area.x + (area.width - w) / 2, area.y + (area.height - h) / 2, w, h)
+}
+
+/// "Add to playlist": choose an existing playlist, or make a new one.
+fn draw_picker(f: &mut Frame, app: &mut App, t: &Theme, area: Rect) {
+    let pop = centered(area, 54, (app.playlists.len() as u16 + 6).clamp(8, 20));
+    f.render_widget(Clear, pop);
+    let blk = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Thick)
+        .border_style(fg(t, t.purple))
+        .title(Span::styled(" add to playlist ", fg(t, t.yellow)))
+        .style(base(t));
+    let inner = blk.inner(pop);
+    f.render_widget(blk, pop);
+
+    let parts = Layout::vertical([Constraint::Length(3), Constraint::Min(2)]).split(pad(inner, 1));
+    let title = app.pending.as_ref().map(|p| p.title.clone()).unwrap_or_default();
+    let head = format!(
+        "adding: {}\nup/down: choose   enter: add\nesc: cancel",
+        trunc(&title, (parts[0].width as usize).saturating_sub(9))
+    );
+    f.render_widget(Paragraph::new(head).style(fg(t, t.dim)), parts[0]);
+
+    let mut items: Vec<ListItem<'static>> = vec![ListItem::new(Line::from(Span::styled(
+        "+ new playlist",
+        fg(t, t.green),
+    )))];
+    for p in app.playlists.iter() {
+        let n = p.tracks.len();
+        let word = if n == 1 { "track" } else { "tracks" };
+        items.push(ListItem::new(Line::from(Span::styled(
+            trunc(&format!("{}  ({} {})", p.name, n, word), (parts[1].width as usize).saturating_sub(1)),
+            fg(t, t.text),
+        ))));
+    }
+    let list = List::new(items).highlight_style(Style::default().bg(t.sel).add_modifier(Modifier::BOLD));
+    f.render_stateful_widget(list, parts[1], &mut app.pick_state);
+}
+
+/// Name box for a new or renamed playlist.
+fn draw_name(f: &mut Frame, app: &mut App, t: &Theme, area: Rect) {
+    let pop = centered(area, 50, 8);
+    f.render_widget(Clear, pop);
+    let title = if app.rename.is_some() { " rename playlist " } else { " new playlist " };
+    let blk = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Thick)
+        .border_style(fg(t, t.purple))
+        .title(Span::styled(title, fg(t, t.yellow)))
+        .style(base(t));
+    let inner = pad(blk.inner(pop), 1);
+    f.render_widget(blk, pop);
+
+    let mut lines: Vec<Line<'static>> = vec![
+        Line::from(Span::styled("name:", fg(t, t.dim))),
+        Line::from(vec![
+            Span::styled("> ", fg(t, t.cyan)),
+            Span::styled(app.name_input.clone(), base(t)),
+            Span::styled("█", fg(t, t.cyan)),
+        ]),
+    ];
+    match &app.name_err {
+        Some(e) => lines.push(Line::from(Span::styled(e.clone(), fg(t, t.red)))),
+        None => lines.push(Line::from("")),
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled("enter: save   esc: cancel", fg(t, t.dim))));
+    f.render_widget(Paragraph::new(lines), inner);
 }
