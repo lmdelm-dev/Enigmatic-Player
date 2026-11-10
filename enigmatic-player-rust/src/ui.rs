@@ -830,7 +830,7 @@ fn draw_settings(f: &mut Frame, app: &mut App, t: &Theme, area: Rect) {
                 Line::from(""),
                 Line::from(vec![
                     Span::styled("version   ", fg(t, t.dim)),
-                    Span::styled("v1.8", base(t)),
+                    Span::styled(concat!("v", env!("CARGO_PKG_VERSION")), base(t)),
                 ]),
                 Line::from(vec![
                     Span::styled("made by   ", fg(t, t.dim)),

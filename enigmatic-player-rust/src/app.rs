@@ -1404,7 +1404,7 @@ impl App {
                 let _ = tx.send(Msg::Reach(punch::open_port(addr.port(), lan)));
             })
             .ok();
-        Ok(addr.to_string())
+        Ok(self_addr(addr.port()))
     }
 
     /// Applies the router result to the room and its announce beacon.
@@ -2200,6 +2200,53 @@ impl App {
                     self.sel = idx;
                 }
             }
+        }
+    }
+}
+
+/// The address this app dials to reach its own relay. The relay binds the
+/// wildcard address so guests can reach it, but the wildcard itself is not a
+/// valid destination: Windows refuses to connect to 0.0.0.0.
+fn self_addr(port: u16) -> String {
+    format!("127.0.0.1:{port}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn own_relay_is_dialled_on_loopback() {
+        // Windows rejects a connection to the unspecified address, so the
+        // hosting path must hand the client a real address.
+        assert_eq!(self_addr(18199), "127.0.0.1:18199");
+        assert!(!self_addr(18199).starts_with("0.0.0.0"));
+    }
+
+    /// The real hosting path: the relay listens on the wildcard address and the
+    /// host client dials loopback. This failed with "cannot reach sync server
+    /// 0.0.0.0:port" before the address was fixed.
+    #[test]
+    fn embedded_relay_is_reachable_on_loopback() {
+        let listener = std::net::TcpListener::bind("0.0.0.0:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let _ = crate::server::serve(listener);
+        });
+        let (etx, erx) = std::sync::mpsc::channel();
+        let _host = crate::together::create(
+            &self_addr(port),
+            "Host",
+            crate::together::RoomState::default(),
+            etx,
+        )
+        .unwrap();
+        match erx.recv_timeout(std::time::Duration::from_secs(5)) {
+            Ok(crate::together::Event::Created { code, .. }) => {
+                assert_eq!(code.len(), 8);
+                assert!(code.chars().all(|c| c.is_ascii_digit()));
+            }
+            other => panic!("hosting did not create a room: {other:?}"),
         }
     }
 }
