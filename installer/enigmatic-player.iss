@@ -9,7 +9,7 @@
 ; Compile with:  installer\build.ps1   (or ISCC.exe installer\enigmatic-player.iss)
 
 #define AppName      "Enigmatic Player"
-#define AppVersion   "1.8.0"
+#define AppVersion   "1.8.1"
 #define AppExe       "enigmatic-player.exe"
 #define AppPublisher "Jamal Tiliouan"
 #define AppUrl       "https://github.com/lmdelm-dev/Enigmatic-Player"

@@ -2,6 +2,18 @@
 
 All notable changes to Enigmatic Player are documented here.
 
+## 1.8.1 - 2026-11-10
+
+### Fixed
+- Hosting a room failed with `cannot reach sync server 0.0.0.0:port`: the
+  embedded relay listens on the wildcard address, but the host client dialled
+  that same wildcard, which Windows refuses. It now dials loopback.
+- The About page shows the real build version instead of a hard-coded one.
+
+### Added
+- Windows installer (`installer/`) that fetches the Visual C++ runtime,
+  ffmpeg and yt-dlp while installing.
+
 ## 1.8.0 - 2026-11-09
 
 ### Added
