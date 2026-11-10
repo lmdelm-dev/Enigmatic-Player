@@ -2,6 +2,10 @@
 
 Enigmatic Player is a pixel-terminal music player written in Rust for the desktop.
 
+## Download
+
+Windows (x86_64) builds are attached to the [latest release](https://github.com/lmdelm-dev/Enigmatic-Player/releases/latest): download `enigmatic-player-v1.8.0-windows-x64.exe` and run it in Windows Terminal, or the `.zip` if you also want the README and license. No installer and no runtime needed. On other platforms, build from source with `cargo build --release`.
+
 ## Rust desktop edition
 
 The player lives in `enigmatic-player-rust/`. It uses native audio devices, terminal mouse regions, filesystem scanning, and an ffmpeg-backed stream pipeline.
