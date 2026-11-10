@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Enigmatic Player — a pixel-terminal music player in your browser.">
+<title>Enigmatic Player</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='4' height='16' fill='%239ece6a'/><rect x='6' width='4' height='16' fill='%237dcfff'/><rect x='12' width='4' height='16' fill='%23f7768e'/></svg>">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- hidden file pickers -->
+<input id="picker" type="file" accept="audio/*,.mp3,.flac,.ogg,.wav,.m4a,.aac,.mp4" multiple hidden>
+<input id="folderpicker" type="file" webkitdirectory hidden>
+<audio id="audio" preload="metadata"></audio>
+
+<div class="frame">
+
+  <header class="topbar">
+    <span class="logo"><b class="sigil">▮▮</b> ENIGMATIC PLAYER</span>
+    <span class="spacer"></span>
+    <span id="backendstate" class="backendstate">BACKEND OFFLINE</span>
+    <button id="settings">[ settings ]</button>
+  </header>
+
+  <main class="layout">
+
+    <!-- ============ now playing ============ -->
+    <section class="nowplaying" aria-label="Now playing">
+      <div id="art" class="art" aria-hidden="true"></div>
+      <div class="nowtext">
+        <p id="provider" class="provider">NOW PLAYING — LOCAL</p>
+        <h1 id="title">nothing playing</h1>
+        <p id="artist">pick a track and press play</p>
+        <p id="meta" class="meta">ENIGMATIC PLAYER</p>
+      </div>
+
+      <div id="visualizer" class="visualizer" aria-hidden="true"></div>
+
+      <div class="seekrow">
+        <span id="elapsed">--:--</span>
+        <input id="seek" type="range" min="0" max="1000" value="0" step="1">
+        <span id="duration">--:--</span>
+      </div>
+
+      <div class="transport">
+        <button id="prev" title="Previous (P)">[|&lt;]</button>
+        <button id="back" title="Back 10s (←)">[&lt;&lt;]</button>
+        <button id="play" title="Play/Pause (Space)">[&gt; ]</button>
+        <button id="forward" title="Forward 10s (→)">[&gt;&gt;]</button>
+        <button id="next" title="Next (N)">[&gt;|]</button>
+        <button id="shuffle">[ shuffle: off ]</button>
+        <button id="repeat">[ repeat: off ]</button>
+      </div>
+
+      <div class="volumerow">
+        <button id="mute">mute</button>
+        <input id="volume" type="range" min="0" max="100" value="75">
+        <span id="voltext" class="readout">75%</span>
+      </div>
+
+      <div class="effrow">
+        <div class="effbox">
+          <span class="efflabel">SPEED <span id="speedtext">1.00x</span></span>
+          <div id="speeds" class="optgrid"></div>
+        </div>
+        <div class="effbox">
+          <span class="efflabel">REVERB WET <span id="wettext">25%</span></span>
+          <div id="reverbs" class="optgrid"></div>
+          <input id="wet" type="range" min="0" max="100" value="25">
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ library ============ -->
+    <section class="library" aria-label="Library">
+      <div id="sources" class="srcrow">
+        <button data-src="local" class="active">local</button>
+        <button data-src="playlists">playlists</button>
+        <button data-src="youtube">youtube</button>
+        <button data-src="soundcloud">soundcloud</button>
+        <button data-src="bandcamp">bandcamp</button>
+      </div>
+
+      <form id="searchform" class="searchform">
+        <input id="query" type="text" placeholder="Search your music library…" autocomplete="off">
+        <button type="submit">[ go ]</button>
+      </form>
+      <p id="hint" class="hint">Choose files or a folder.</p>
+
+      <div class="libactions">
+        <button id="files">[ + files ]</button>
+        <button id="folder">[ + folder ]</button>
+        <button id="newlist">[ + playlist ]</button>
+        <span id="count" class="readout">0 TRACKS</span>
+      </div>
+
+      <div id="list" class="list"></div>
+      <footer class="statusbar"><span id="status">ready</span></footer>
+    </section>
+
+  </main>
+</div>
+
+<!-- ============ settings modal ============ -->
+<div id="modal" class="modal hidden">
+  <div class="sheet">
+    <div class="sheethdr"><span>SETTINGS</span><button id="close">[ close × ]</button></div>
+    <div id="settingsbody"></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
