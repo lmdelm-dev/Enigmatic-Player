@@ -4,7 +4,13 @@ Enigmatic Player is a pixel-terminal music player written in Rust for the deskto
 
 ## Download
 
-Windows (x86_64) builds are attached to the [latest release](https://github.com/lmdelm-dev/Enigmatic-Player/releases/latest): download `enigmatic-player-v1.8.0-windows-x64.exe` and run it in Windows Terminal, or the `.zip` if you also want the README and license. No installer and no runtime needed. On other platforms, build from source with `cargo build --release`.
+Windows (x86_64) builds are on the [latest release](https://github.com/lmdelm-dev/Enigmatic-Player/releases/latest):
+
+- **`enigmatic-player-1.8.0-windows-x64-setup.exe`** - installer. Installs the player under Program Files with Start menu and uninstall entries, and while installing downloads what the player needs at runtime: the Microsoft Visual C++ 2015-2022 runtime (the exe imports `VCRUNTIME140.dll`), ffmpeg (decodes online streams) and yt-dlp (resolves provider URLs). The two online tools are an optional task; local playback never needs them.
+- **`enigmatic-player-v1.8.0-windows-x64.exe`** - the bare binary, nothing to install. For online sources, put `ffmpeg.exe` and `yt-dlp.exe` in the same folder.
+- **`enigmatic-player-v1.8.0-windows-x64.zip`** - the bare binary plus README and LICENSE.
+
+On other platforms, build from source with `cargo build --release`. The installer sources live in `installer/` and rebuild with `installer\build.ps1` (Inno Setup 6).
 
 ## Rust desktop edition
 
