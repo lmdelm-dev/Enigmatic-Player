@@ -1,6 +1,6 @@
 [package]
 name = "enigmatic-player"
-version = "1.8.1"
+version = "1.9.0"
 edition = "2021"
 description = "Enigmatic Player: a pixel-style terminal music player"
 authors = ["Jamal Tiliouan"]
@@ -13,6 +13,10 @@ walkdir = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dirs = "5"
+iroh = "1.4"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "io-util", "time", "net", "macros"] }
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "query", "rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 
 [profile.release]
 opt-level = 3

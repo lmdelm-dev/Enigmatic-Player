@@ -10,10 +10,10 @@ use serde::{Deserialize, Serialize};
 /// - a host's app announces its room every ~3 seconds on a loopback LAN UDP broadcast
 /// - every app runs a quiet listener that collects those announcements
 ///
-/// Announcements carry room code, host name and the multi-address server
-/// string; nothing else leaves the machine. This is best-effort: some Wi-Fi
-/// access points and the OS firewall swallow broadcasts, in which case guests
-/// can still paste the invite code directly.
+/// Announcements carry room code, host name and the host's iroh endpoint id;
+/// nothing else leaves the machine. This is best-effort: some Wi-Fi access
+/// points and the OS firewall swallow broadcasts, in which case guests can
+/// still paste the invite code directly.
 
 const PORT: u16 = 18066;
 const BROADCAST: &str = "255.255.255.255";

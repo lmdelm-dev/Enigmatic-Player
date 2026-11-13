@@ -8,6 +8,7 @@ use ratatui::{
 
 use crate::app::{App, Btn, Mode, BANDS, NB_RV, NB_VOL, PLAYLISTS, REVERBS, SPEEDS};
 use crate::library::{Provider, Track};
+use crate::lyrics;
 use crate::themes::{Theme, THEMES};
 
 const MIN_W: u16 = 80;
@@ -198,6 +199,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         Mode::Share => draw_share(f, app, &t, full),
         Mode::Join => draw_join(f, app, &t, full),
         Mode::Room => draw_room(f, app, &t, full),
+        Mode::Lyrics => draw_lyrics(f, app, &t, full),
         _ => {}
     }
 }
@@ -210,7 +212,7 @@ fn draw_titlebar(f: &mut Frame, app: &mut App, t: &Theme, r: Rect) {
     row.put("● ", Style::default().fg(t.red).bg(t.panel));
     row.put("● ", Style::default().fg(t.yellow).bg(t.panel));
     row.put("● ", Style::default().fg(t.green).bg(t.panel));
-    row.put(" ~/music - enigmatic player v1.7", bar);
+    row.put(" ~/music - enigmatic player v1.8", bar);
     if let Some(room) = &app.room {
         let badge = if room.pending {
             " live: connecting ...".to_string()
@@ -687,6 +689,182 @@ fn draw_status(f: &mut Frame, app: &mut App, t: &Theme, r: Rect) {
     f.render_widget(Paragraph::new(line), r);
 }
 
+fn source_label(source: &str) -> &'static str {
+    match source {
+        "file" => "from a .lrc/.txt file next to the song",
+        "tags" => "from embedded audio tags",
+        "cache" => "from the saved lyrics cache",
+        "lrclib" => "from lrclib.net",
+        _ => "lyrics",
+    }
+}
+
+fn draw_lyrics(f: &mut Frame, app: &mut App, t: &Theme, area: Rect) {
+    let pop = centered(area, 84, 28);
+    f.render_widget(Clear, pop);
+    let blk = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Thick)
+        .border_style(fg(t, t.yellow))
+        .title(Span::styled(" lyrics ", fg(t, t.yellow)))
+        .style(base(t));
+    let inner = pad(blk.inner(pop), 1);
+    f.render_widget(blk, pop);
+
+    let rows = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Min(3),
+        Constraint::Length(2),
+    ])
+    .split(inner);
+    let w = rows[0].width as usize;
+
+    let track = app
+        .now
+        .as_ref()
+        .map(|n| format!("{} - {}", n.title, n.artist))
+        .unwrap_or_else(|| "nothing playing".to_string());
+    let title = Line::from(Span::styled(
+        trunc(&track, w),
+        base(t).add_modifier(Modifier::BOLD),
+    ));
+
+    match &app.lyrics {
+        lyrics::State::Idle | lyrics::State::Loading => {
+            f.render_widget(
+                Paragraph::new(vec![
+                    title,
+                    Line::from(Span::styled("looking for lyrics ...", fg(t, t.dim))),
+                ]),
+                rows[0],
+            );
+            f.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    "searching the song file, embedded tags, the cache, then lrclib.net",
+                    fg(t, t.dim),
+                ))),
+                rows[1],
+            );
+        }
+        lyrics::State::Missing(message) => {
+            f.render_widget(
+                Paragraph::new(vec![
+                    title,
+                    Line::from(Span::styled("no lyrics available", fg(t, t.red))),
+                ]),
+                rows[0],
+            );
+            let mut lines = vec![
+                Line::from(Span::styled(trunc(message, w), fg(t, t.dim))),
+                Line::from(""),
+            ];
+            if !lyrics::online_enabled() {
+                lines.push(Line::from(Span::styled(
+                    "online lookup is off: put a .lrc or .txt file next to the song,",
+                    fg(t, t.dim),
+                )));
+                lines.push(Line::from(Span::styled(
+                    "or embed lyrics in its tags.",
+                    fg(t, t.dim),
+                )));
+            }
+            f.render_widget(Paragraph::new(lines), rows[1]);
+        }
+        lyrics::State::Ready(lyric) => {
+            let follow = if app.lyrics_follow {
+                "following the song"
+            } else {
+                "manual scroll"
+            };
+            f.render_widget(
+                Paragraph::new(vec![
+                    title,
+                    Line::from(Span::styled(
+                        trunc(&format!("{} · {}", source_label(lyric.source), follow), w),
+                        fg(t, t.dim),
+                    )),
+                ]),
+                rows[0],
+            );
+
+            if lyric.lines.is_empty() {
+                let msg = if lyric.instrumental {
+                    "this track is instrumental - no lyrics to show"
+                } else {
+                    "the lyrics for this track are empty"
+                };
+                f.render_widget(
+                    Paragraph::new(Line::from(Span::styled(msg, fg(t, t.dim)))),
+                    rows[1],
+                );
+            } else {
+                let current = lyric.current(app.pos);
+                let body_h = rows[1].height.max(1) as usize;
+                let top = if app.lyrics_follow {
+                    current.map(|i| i.saturating_sub(body_h / 2)).unwrap_or(0)
+                } else {
+                    app.lyrics_scroll
+                };
+                let max_top = lyric.lines.len().saturating_sub(body_h);
+                let top = top.min(max_top);
+                app.lyrics_scroll = top;
+
+                let cur_index = current.unwrap_or(usize::MAX);
+                let mut lines: Vec<Line<'static>> = Vec::new();
+                for (i, line) in lyric.lines.iter().enumerate().skip(top).take(body_h) {
+                    let is_current = current == Some(i);
+                    let text_style = if is_current {
+                        Style::default()
+                            .fg(t.yellow)
+                            .bg(t.sel)
+                            .add_modifier(Modifier::BOLD)
+                    } else if lyric.synced() && i < cur_index {
+                        fg(t, t.dim)
+                    } else {
+                        fg(t, t.text)
+                    };
+                    let mut spans = vec![Span::styled(
+                        if is_current { "▶ " } else { "  " },
+                        fg(t, if is_current { t.yellow } else { t.dim }),
+                    )];
+                    if let Some(at) = line.at {
+                        spans.push(Span::styled(
+                            format!("{:>4}  ", fmt_time(at)),
+                            fg(t, t.dim),
+                        ));
+                    }
+                    spans.push(Span::styled(trunc(&line.text, w.saturating_sub(8)), text_style));
+                    lines.push(Line::from(spans));
+                }
+                f.render_widget(Paragraph::new(lines), rows[1]);
+            }
+        }
+    }
+
+    let hint = match &app.lyrics {
+        lyrics::State::Ready(l) if l.synced() => {
+            "up/down: scroll   f: follow   r: reload   y/esc: close"
+        }
+        lyrics::State::Ready(_) => "plain lyrics (no timing)   r: reload   y/esc: close",
+        _ => "r: try again   y/esc: close",
+    };
+    let footer = vec![
+        Line::from(Span::styled(
+            if app.now.is_some() && app.playing {
+                format!("{}   (space: play/pause)", hint)
+            } else {
+                hint.to_string()
+            },
+            fg(t, t.cyan),
+        )),
+        Line::from(Span::styled(
+            format!("playing at {} / {}", fmt_time(app.pos), fmt_time(app.dur)),
+            fg(t, t.dim),
+        )),
+    ];
+    f.render_widget(Paragraph::new(footer), rows[2]);
+}
+
 fn draw_settings(f: &mut Frame, app: &mut App, t: &Theme, area: Rect) {
     let w = 72u16.min(area.width.saturating_sub(2));
     let h = 28u16.min(area.height.saturating_sub(2));
@@ -830,7 +1008,7 @@ fn draw_settings(f: &mut Frame, app: &mut App, t: &Theme, area: Rect) {
                 Line::from(""),
                 Line::from(vec![
                     Span::styled("version   ", fg(t, t.dim)),
-                    Span::styled(concat!("v", env!("CARGO_PKG_VERSION")), base(t)),
+                    Span::styled("v1.8", base(t)),
                 ]),
                 Line::from(vec![
                     Span::styled("made by   ", fg(t, t.dim)),
@@ -861,6 +1039,7 @@ fn draw_settings(f: &mut Frame, app: &mut App, t: &Theme, area: Rect) {
                 key("[ / ]", "slower and faster"),
                 key("r  < >", "reverb preset and amount"),
                 key("n / p", "next and previous"),
+                key("y", "lyrics for the current track"),
                 key("q", "quit"),
             ];
             f.render_widget(Paragraph::new(lines), content);
@@ -1004,7 +1183,7 @@ fn draw_join(f: &mut Frame, app: &mut App, t: &Theme, area: Rect) {
     let w = inner.width.saturating_sub(3) as usize;
     let mut lines: Vec<Line<'static>> = vec![
         Line::from(Span::styled(
-            "paste a room invite (EROOM1:...), a room code, or a playlist share code.",
+            "paste a room invite (EROOM2:...), a room code, or a playlist share code.",
             fg(t, t.dim),
         )),
         Line::from(Span::styled(
@@ -1090,19 +1269,18 @@ fn draw_room(f: &mut Frame, app: &mut App, t: &Theme, area: Rect) {
     } else {
         format!("room {} ({} listeners live here)", code, names.split(", ").filter(|s| !s.is_empty()).count())
     };
-    // Honest note about who can reach this room right now.
+    // Honest note about how this room is reachable.
     let reach = if pending {
-        "still reaching the room's server ...".to_string()
-    } else if !role.is_empty() && role == "host" && server.contains('|') {
-        format!("reached: LAN + internet (router opened a port)")
-    } else if !role.is_empty() && role == "host" && server.starts_with("127.0.0.1") {
-        "reached: this device only (LAN discovery will still show it)".to_string()
+        "opening an encrypted peer-to-peer connection ...".to_string()
+    } else if role == "host" {
+        "reach: friends anywhere - direct when possible, encrypted relay otherwise".to_string()
     } else {
-        format!("connect to {}", tail_trunc(&server, w.saturating_sub(14)))
+        format!("connected to host {}", tail_trunc(&server, w.saturating_sub(18)))
     };
+    let reach_ok = !pending;
     let lines = vec![
         Line::from(Span::styled(trunc(&head, w), fg(t, t.green))),
-        Line::from(Span::styled(trunc(&reach, w), fg(t, if server.contains('|') { t.green } else { t.dim }))),
+        Line::from(Span::styled(trunc(&reach, w), fg(t, if reach_ok { t.green } else { t.dim }))),
         Line::from(Span::styled(
             trunc(&format!("you are the {}, name: {}", role, label), w),
             fg(t, t.dim),

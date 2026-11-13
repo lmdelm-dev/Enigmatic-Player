@@ -1,12 +1,39 @@
-use std::io::{BufRead, BufReader, Write};
-use std::net::{Shutdown, TcpStream, ToSocketAddrs};
-use std::sync::mpsc::{channel, Sender};
-use std::thread;
-use std::time::Duration;
+//! Listen-together transport.
+//!
+//! Rooms are hosted by the player itself over iroh, a peer-to-peer QUIC
+//! network: the invite carries the host's public key, so guests can connect
+//! from any network without accounts, port forwarding or a relay set up by the
+//! user. When a direct connection cannot be punched through the routers, iroh
+//! falls back to an encrypted public relay; only ciphertext passes through it.
+//!
+//! The wire protocol is newline-delimited JSON over one bidirectional QUIC
+//! stream per guest. Playback state is tiny (queue metadata, position, speed);
+//! audio never leaves the machine.
 
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use iroh::endpoint::{presets, Incoming, SendStream};
+use iroh::{Endpoint, EndpointAddr, PublicKey, SecretKey};
 use serde::{Deserialize, Serialize};
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::sync::{broadcast, mpsc};
 
 use crate::share::SharedTrack;
+
+const ALPN: &[u8] = b"enigmatic-player/room/2";
+const MAX_MEMBERS: usize = 16;
+const CODE_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+/// How long to wait for the public relay before giving up on it. Dials still
+/// work afterwards; this only avoids announcing a room too early.
+const ONLINE_WAIT: Duration = Duration::from_secs(15);
+/// Total time a guest keeps retrying while the host's address propagates.
+const CONNECT_WAIT: Duration = Duration::from_secs(45);
 
 /// Playback state shared with everyone in a room. Guests follow this; the
 /// audio itself is never sent over the network.
@@ -51,15 +78,6 @@ pub enum ClientMsg {
     State { state: RoomState },
     Leave,
     Ping,
-}
-
-impl ClientMsg {
-    fn line(&self) -> Option<String> {
-        serde_json::to_string(self).ok().map(|mut s| {
-            s.push('\n');
-            s
-        })
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -139,7 +157,7 @@ pub struct RoomHandle {
 
 impl RoomHandle {
     pub fn invite(&self) -> String {
-        if self.code.is_empty() {
+        if self.code.is_empty() || self.server.is_empty() {
             String::new()
         } else {
             encode_invite(&self.server, &self.code)
@@ -159,197 +177,102 @@ impl RoomHandle {
     }
 }
 
-/// An invite's server field may hold several reachable addresses, separated
-/// by `|` (e.g. the LAN address of the host and its public router-mapped one).
-/// Returns unique, non-empty candidates in the order the host listed them.
-pub fn server_options(server: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    for s in server.split('|') {
-        let s = s.trim();
-        if !s.is_empty() && !out.iter().any(|x| x == s) {
-            out.push(s.to_string());
-        }
-    }
-    out
-}
-
-fn open(server: &str) -> Result<(TcpStream, String), String> {
-    let mut options = server_options(server);
-    if options.is_empty() {
-        options.push(server.to_string());
-    }
-    let mut last = format!("cannot reach sync server {server}");
-    for opt in &options {
-        match open_one(opt) {
-            Ok(s) => return Ok((s, opt.clone())),
-            Err(e) => last = e,
-        }
-    }
-    Err(last)
-}
-
-fn open_one(server: &str) -> Result<TcpStream, String> {
-    let addrs = server
-        .to_socket_addrs()
-        .map_err(|e| format!("cannot resolve sync server {server}: {e}"))?;
-    let mut last = format!("cannot reach sync server {server}");
-    for a in addrs {
-        match TcpStream::connect_timeout(&a, Duration::from_secs(4)) {
-            Ok(s) => {
-                let _ = s.set_nodelay(true);
-                let _ = s.set_read_timeout(Some(Duration::from_secs(60)));
-                return Ok(s);
-            }
-            Err(e) => last = format!("cannot reach sync server {server}: {e}"),
-        }
-    }
-    Err(last)
-}
-
-fn spawn(
-    server: &str,
-    first: ClientMsg,
-    me: &str,
-    events: Sender<Event>,
-) -> Result<Sender<ClientMsg>, String> {
-    let (stream, _reached) = open(server)?;
-    let mut writer = stream.try_clone().map_err(|e| e.to_string())?;
-    if let Some(line) = first.line() {
-        writer
-            .write_all(line.as_bytes())
-            .and_then(|_| writer.flush())
-            .map_err(|e| format!("cannot talk to sync server: {e}"))?;
-    }
-
+/// Hosts the current session from this process. The returned handle is live
+/// immediately; the endpoint id arrives with `Event::Created` once networking
+/// is ready.
+pub fn create(me: &str, state: RoomState, events: Sender<Event>) -> Result<RoomHandle, String> {
+    let code = new_code();
     let (tx, rx) = channel::<ClientMsg>();
-    let server_owned = server.to_string();
     let me = me.to_string();
-    let reader_events = events.clone();
+    let me_thread = me.clone();
+    let code_thread = code.clone();
+    let handle_state = state.clone();
+    let ev = events.clone();
 
-    thread::spawn(move || {
-        let reader = BufReader::new(stream);
-        for line in reader.lines() {
-            let line = match line {
-                Ok(l) => l,
-                Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {
-                    continue;
-                }
+    thread::Builder::new()
+        .name("room-host".into())
+        .spawn(move || {
+            let rt = match tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .worker_threads(2)
+                .build()
+            {
+                Ok(rt) => rt,
                 Err(e) => {
-                    let _ = reader_events.send(Event::Closed(format!("room connection lost: {e}")));
+                    let _ = ev.send(Event::Error(format!("cannot start room networking: {e}")));
                     return;
                 }
             };
-            if line.trim().is_empty() {
-                continue;
+            if let Err(e) = rt.block_on(host_main(me_thread, code_thread, state, rx, ev.clone())) {
+                let _ = ev.send(Event::Error(e));
             }
-            match serde_json::from_str::<ServerMsg>(&line) {
-                Ok(ServerMsg::Created { code, host, members, state, .. }) => {
-                    let _ = reader_events.send(Event::Created {
-                        server: server_owned.clone(),
-                        code,
-                        host,
-                        members,
-                        state,
-                    });
-                }
-                Ok(ServerMsg::Joined { code, host, members, state, .. }) => {
-                    let _ = reader_events.send(Event::Joined {
-                        server: server_owned.clone(),
-                        code,
-                        host,
-                        members,
-                        state,
-                    });
-                }
-                Ok(ServerMsg::Sync { host, members, state }) => {
-                    let _ = reader_events.send(Event::Sync { host, members, state });
-                }
-                Ok(ServerMsg::Members { host, members }) => {
-                    let _ = reader_events.send(Event::Members { host, members });
-                }
-                Ok(ServerMsg::Error { message }) => {
-                    let _ = reader_events.send(Event::Error(message));
-                }
-                Ok(ServerMsg::Pong) => {}
-                Err(e) => {
-                    let _ = reader_events.send(Event::Error(format!("bad message from sync server: {e}")));
-                }
-            }
-        }
-        let _ = reader_events.send(Event::Closed("room closed by the sync server".into()));
-    });
+        })
+        .map_err(|e| format!("cannot start a room: {e}"))?;
 
-    thread::spawn(move || {
-        while let Ok(msg) = rx.recv() {
-            let leave = matches!(msg, ClientMsg::Leave);
-            let Some(line) = msg.line() else { continue };
-            if writer.write_all(line.as_bytes()).and_then(|_| writer.flush()).is_err() {
-                break;
-            }
-            if leave {
-                let _ = writer.shutdown(Shutdown::Both);
-                break;
-            }
-        }
-    });
-
-    let _ = me;
-    Ok(tx)
-}
-
-pub fn create(
-    server: &str,
-    me: &str,
-    state: RoomState,
-    events: Sender<Event>,
-) -> Result<RoomHandle, String> {
-    let tx = spawn(
-        server,
-        ClientMsg::Create {
-            name: me.to_string(),
-            state: state.clone(),
-        },
-        me,
-        events,
-    )?;
     Ok(RoomHandle {
-        code: String::new(),
+        code,
         host: true,
-        server: server.to_string(),
-        me: me.to_string(),
-        host_name: me.to_string(),
+        server: String::new(),
+        me: me.clone(),
+        host_name: me,
         members: Vec::new(),
         connected: true,
         pending: true,
-        state,
+        state: handle_state,
         tx,
     })
 }
 
-pub fn join(
-    server: &str,
-    me: &str,
-    code: &str,
-    events: Sender<Event>,
-) -> Result<RoomHandle, String> {
+/// Joins a room through its endpoint id (the address carried by the invite).
+pub fn join(server: &str, me: &str, code: &str, events: Sender<Event>) -> Result<RoomHandle, String> {
     let code = code.trim().to_uppercase();
     if code.len() < 4 {
         return Err("that invite code is too short".into());
     }
-    let tx = spawn(
-        server,
-        ClientMsg::Join {
-            code: code.clone(),
-            name: me.to_string(),
-        },
-        me,
-        events,
-    )?;
+    let server = server.trim().to_string();
+    if server.is_empty() {
+        return Err("that invite has no room address".into());
+    }
+    PublicKey::from_str(&server).map_err(|e| format!("that room address is invalid: {e}"))?;
+
+    let (tx, rx) = channel::<ClientMsg>();
+    let me = me.to_string();
+    let me_thread = me.clone();
+    let server_thread = server.clone();
+    let code_thread = code.clone();
+    let ev = events.clone();
+
+    thread::Builder::new()
+        .name("room-guest".into())
+        .spawn(move || {
+            let rt = match tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .worker_threads(2)
+                .build()
+            {
+                Ok(rt) => rt,
+                Err(e) => {
+                    let _ = ev.send(Event::Error(format!("cannot start room networking: {e}")));
+                    return;
+                }
+            };
+            if let Err(e) = rt.block_on(guest_main(
+                server_thread,
+                me_thread,
+                code_thread,
+                rx,
+                ev.clone(),
+            )) {
+                let _ = ev.send(Event::Error(e));
+            }
+        })
+        .map_err(|e| format!("cannot join a room: {e}"))?;
+
     Ok(RoomHandle {
         code,
         host: false,
-        server: server.to_string(),
-        me: me.to_string(),
+        server,
+        me: me.clone(),
         host_name: String::new(),
         members: Vec::new(),
         connected: true,
@@ -359,37 +282,568 @@ pub fn join(
     })
 }
 
-const INVITE_PREFIX: &str = "EROOM1:";
+// ---------- host side ----------
 
-pub fn encode_invite(server: &str, code: &str) -> String {
-    format!(
-        "{INVITE_PREFIX}{}:{}",
-        hex(server.as_bytes()),
-        code.to_uppercase()
-    )
+struct RoomShared {
+    code: String,
+    host: String,
+    state: Mutex<RoomState>,
+    members: Mutex<Vec<String>>,
+    bcast: broadcast::Sender<Arc<String>>,
+    events: Sender<Event>,
 }
 
-pub fn decode_invite(text: &str) -> Result<(String, String), String> {
-    let text = text.trim();
-    let body = text
-        .strip_prefix(INVITE_PREFIX)
-        .or_else(|| text.strip_prefix("eroom1:"))
-        .ok_or_else(|| "not a room invite".to_string())?;
-    let (server, code) = body
-        .split_once(':')
-        .ok_or_else(|| "room invite is incomplete".to_string())?;
-    let server = String::from_utf8(unhex(server)?)
-        .map_err(|_| "room invite has an invalid server address".to_string())?;
-    let code = code.trim().to_uppercase();
-    if server.is_empty() || code.len() < 4 {
-        return Err("room invite is incomplete".into());
+impl RoomShared {
+    fn snapshot(&self) -> (String, Vec<String>, RoomState) {
+        let state = self.state.lock().unwrap().clone();
+        let members = self.members.lock().unwrap().clone();
+        (self.host.clone(), members, state)
     }
-    Ok((server, code))
+
+    fn add_member(&self, name: &str) {
+        self.members.lock().unwrap().push(name.to_string());
+    }
+
+    fn remove_member(&self, name: &str) {
+        let mut members = self.members.lock().unwrap();
+        if let Some(i) = members.iter().position(|m| m == name) {
+            members.remove(i);
+        }
+    }
+
+    fn is_full(&self) -> bool {
+        self.members.lock().unwrap().len() >= MAX_MEMBERS
+    }
+
+    fn broadcast_members(&self) {
+        let (host, members, _) = self.snapshot();
+        if let Some(line) = json_line(&ServerMsg::Members {
+            host: host.clone(),
+            members: members.clone(),
+        }) {
+            let _ = self.bcast.send(line);
+        }
+        let _ = self.events.send(Event::Members { host, members });
+    }
+
+    fn broadcast_sync(&self, state: RoomState) {
+        let (host, members, _) = self.snapshot();
+        if let Some(line) = json_line(&ServerMsg::Sync {
+            host,
+            members,
+            state,
+        }) {
+            let _ = self.bcast.send(line);
+        }
+    }
+}
+
+async fn host_main(
+    me: String,
+    code: String,
+    state: RoomState,
+    rx: Receiver<ClientMsg>,
+    events: Sender<Event>,
+) -> Result<(), String> {
+    let key = load_identity()?;
+    let endpoint = Endpoint::builder(presets::N0)
+        .secret_key(key)
+        .alpns(vec![ALPN.to_vec()])
+        .bind()
+        .await
+        .map_err(|e| format!("cannot open a room here: {e}"))?;
+    // Register with a relay before handing out the invite. This is what makes
+    // the endpoint id resolvable from another network.
+    let _ = tokio::time::timeout(ONLINE_WAIT, endpoint.online()).await;
+    let endpoint_id = endpoint.id().to_string();
+
+    let (bcast, _) = broadcast::channel::<Arc<String>>(64);
+    let room = Arc::new(RoomShared {
+        code: code.clone(),
+        host: me.clone(),
+        state: Mutex::new(state.clone()),
+        members: Mutex::new(vec![me.clone()]),
+        bcast,
+        events: events.clone(),
+    });
+
+    // The UI talks over a std channel; this thread turns it into an async one
+    // so the runtime is never blocked waiting for the player.
+    let (ctx, mut crx) = mpsc::unbounded_channel::<ClientMsg>();
+    thread::Builder::new()
+        .name("room-control".into())
+        .spawn(move || {
+            while let Ok(msg) = rx.recv() {
+                if ctx.send(msg).is_err() {
+                    break;
+                }
+            }
+        })
+        .ok();
+
+    let _ = events.send(Event::Created {
+        server: endpoint_id,
+        code: code.clone(),
+        host: me.clone(),
+        members: vec![me],
+        state,
+    });
+
+    let accept_ep = endpoint.clone();
+    let accept_room = room.clone();
+    let accept = tokio::spawn(async move {
+        while let Some(incoming) = accept_ep.accept().await {
+            let room = accept_room.clone();
+            tokio::spawn(async move { handle_guest(incoming, room).await });
+        }
+    });
+
+    while let Some(msg) = crx.recv().await {
+        match msg {
+            ClientMsg::State { state } => {
+                *room.state.lock().unwrap() = state.clone();
+                room.broadcast_sync(state);
+            }
+            ClientMsg::Leave => break,
+            _ => {}
+        }
+    }
+
+    accept.abort();
+    endpoint.close().await;
+    Ok(())
+}
+
+async fn handle_guest(incoming: Incoming, room: Arc<RoomShared>) {
+    let Ok(conn) = incoming.await else { return };
+    let Ok((mut send, recv)) = conn.accept_bi().await else {
+        conn.close(0u8.into(), b"bye");
+        return;
+    };
+    let mut reader = BufReader::new(recv);
+    let mut line = String::new();
+    let first = reader.read_line(&mut line).await.unwrap_or_default();
+    if first == 0 {
+        conn.close(0u8.into(), b"bye");
+        return;
+    }
+
+    let name = match serde_json::from_str::<ClientMsg>(&line) {
+        Ok(ClientMsg::Join { code, name }) if code.trim().eq_ignore_ascii_case(&room.code) => {
+            clean_name(&name)
+        }
+        _ => {
+            reject(&mut send, "this invite does not open this room").await;
+            conn.close(0u8.into(), b"bye");
+            return;
+        }
+    };
+    if room.is_full() {
+        reject(&mut send, "that room is full").await;
+        conn.close(0u8.into(), b"bye");
+        return;
+    }
+
+    // Subscribe before the first snapshot is sent, so no update can slip
+    // between the Joined message and the writer task starting.
+    let mut updates = room.bcast.subscribe();
+    let (host, members, state) = room.snapshot();
+    let joined = ServerMsg::Joined {
+        code: room.code.clone(),
+        token: String::new(),
+        host,
+        members,
+        state,
+    };
+    if write_msg(&mut send, &joined).await.is_err() {
+        conn.close(0u8.into(), b"bye");
+        return;
+    }
+
+    let writer = tokio::spawn(async move {
+        loop {
+            match updates.recv().await {
+                Ok(line) => {
+                    if send.write_all(line.as_bytes()).await.is_err() {
+                        break;
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Closed) => break,
+            }
+        }
+        let _ = send.finish();
+    });
+
+    room.add_member(&name);
+    room.broadcast_members();
+
+    loop {
+        line.clear();
+        match reader.read_line(&mut line).await {
+            Ok(0) => break,
+            Ok(_) => {
+                // Only the host changes playback; guest state is ignored.
+                if let Ok(ClientMsg::Leave) = serde_json::from_str::<ClientMsg>(&line) {
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+
+    writer.abort();
+    room.remove_member(&name);
+    room.broadcast_members();
+    conn.close(0u8.into(), b"bye");
+}
+
+async fn reject(send: &mut SendStream, message: &str) {
+    let _ = write_msg(
+        send,
+        &ServerMsg::Error {
+            message: message.to_string(),
+        },
+    )
+    .await;
+    let _ = send.finish();
+}
+
+// ---------- guest side ----------
+
+async fn guest_main(
+    server: String,
+    me: String,
+    code: String,
+    rx: Receiver<ClientMsg>,
+    events: Sender<Event>,
+) -> Result<(), String> {
+    let id = PublicKey::from_str(&server).map_err(|e| format!("that room address is invalid: {e}"))?;
+    let key = load_identity()?;
+    let endpoint = Endpoint::builder(presets::N0)
+        .secret_key(key)
+        .alpns(vec![ALPN.to_vec()])
+        .bind()
+        .await
+        .map_err(|e| format!("cannot open the room connection: {e}"))?;
+
+    // The address lookup may need a moment after the host published itself,
+    // so keep trying until the deadline instead of failing on the first miss.
+    let deadline = Instant::now() + CONNECT_WAIT;
+    let conn = loop {
+        match endpoint.connect(EndpointAddr::new(id), ALPN).await {
+            Ok(conn) => break conn,
+            Err(e) => {
+                if Instant::now() >= deadline {
+                    endpoint.close().await;
+                    return Err(format!("cannot reach the host: {e}"));
+                }
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        }
+    };
+    let (mut send, recv) = conn
+        .open_bi()
+        .await
+        .map_err(|e| format!("cannot open a room channel: {e}"))?;
+
+    let join = json_line(&ClientMsg::Join {
+        code: code.clone(),
+        name: me,
+    })
+    .ok_or_else(|| "cannot encode the join request".to_string())?;
+    send.write_all(join.as_bytes())
+        .await
+        .map_err(|e| format!("cannot talk to the host: {e}"))?;
+
+    let mut reader = BufReader::new(recv);
+    let mut line = String::new();
+    match reader.read_line(&mut line).await {
+        Ok(0) => {
+            let _ = events.send(Event::Error("the host closed the room".into()));
+            endpoint.close().await;
+            return Ok(());
+        }
+        Ok(_) => {}
+        Err(e) => {
+            let _ = events.send(Event::Error(format!("cannot reach the host: {e}")));
+            endpoint.close().await;
+            return Ok(());
+        }
+    }
+
+    match serde_json::from_str::<ServerMsg>(&line) {
+        Ok(ServerMsg::Joined {
+            code,
+            host,
+            members,
+            state,
+            ..
+        }) => {
+            let _ = events.send(Event::Joined {
+                server,
+                code,
+                host,
+                members,
+                state,
+            });
+        }
+        Ok(ServerMsg::Error { message }) => {
+            let _ = events.send(Event::Error(message));
+            endpoint.close().await;
+            return Ok(());
+        }
+        Ok(_) => {
+            let _ = events.send(Event::Error("unexpected reply from the host".into()));
+            endpoint.close().await;
+            return Ok(());
+        }
+        Err(e) => {
+            let _ = events.send(Event::Error(format!("bad reply from the host: {e}")));
+            endpoint.close().await;
+            return Ok(());
+        }
+    }
+
+    let (ctx, mut crx) = mpsc::unbounded_channel::<ClientMsg>();
+    thread::Builder::new()
+        .name("room-guest-control".into())
+        .spawn(move || {
+            while let Ok(msg) = rx.recv() {
+                if ctx.send(msg).is_err() {
+                    break;
+                }
+            }
+        })
+        .ok();
+
+    let control_conn = conn.clone();
+    let writer = tokio::spawn(async move {
+        while let Some(msg) = crx.recv().await {
+            match msg {
+                ClientMsg::Ping => {
+                    let Some(line) = json_line(&ClientMsg::Ping) else { continue };
+                    if send.write_all(line.as_bytes()).await.is_err() {
+                        break;
+                    }
+                }
+                ClientMsg::Leave => {
+                    if let Some(line) = json_line(&ClientMsg::Leave) {
+                        let _ = send.write_all(line.as_bytes()).await;
+                    }
+                    let _ = send.finish();
+                    control_conn.close(0u8.into(), b"bye");
+                    break;
+                }
+                _ => {}
+            }
+        }
+        let _ = send.finish();
+    });
+
+    loop {
+        line.clear();
+        match reader.read_line(&mut line).await {
+            Ok(0) => {
+                let _ = events.send(Event::Closed("the host closed the room".into()));
+                break;
+            }
+            Ok(_) => match serde_json::from_str::<ServerMsg>(&line) {
+                Ok(ServerMsg::Sync {
+                    host,
+                    members,
+                    state,
+                }) => {
+                    let _ = events.send(Event::Sync {
+                        host,
+                        members,
+                        state,
+                    });
+                }
+                Ok(ServerMsg::Members { host, members }) => {
+                    let _ = events.send(Event::Members { host, members });
+                }
+                Ok(ServerMsg::Error { message }) => {
+                    let _ = events.send(Event::Error(message));
+                    break;
+                }
+                Ok(ServerMsg::Pong) | Ok(_) => {}
+                Err(e) => {
+                    let _ = events.send(Event::Error(format!("bad message from the host: {e}")));
+                }
+            },
+            Err(e) => {
+                let _ = events.send(Event::Closed(format!("room connection lost: {e}")));
+                break;
+            }
+        }
+    }
+
+    writer.abort();
+    endpoint.close().await;
+    Ok(())
+}
+
+// ---------- helpers ----------
+
+async fn write_msg(send: &mut SendStream, msg: &ServerMsg) -> Result<(), String> {
+    let line = json_line(msg).ok_or_else(|| "cannot encode a room message".to_string())?;
+    send.write_all(line.as_bytes())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+fn json_line<T: Serialize>(msg: &T) -> Option<Arc<String>> {
+    serde_json::to_string(msg).ok().map(|mut s| {
+        s.push('\n');
+        Arc::new(s)
+    })
+}
+
+fn clean_name(name: &str) -> String {
+    let n: String = name
+        .trim()
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(24)
+        .collect();
+    if n.is_empty() {
+        "listener".into()
+    } else {
+        n
+    }
+}
+
+fn new_code() -> String {
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let mut x = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(1)
+        ^ (std::process::id() as u64) << 32
+        ^ SEQ.fetch_add(1, Ordering::Relaxed).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    let mut out = String::with_capacity(6);
+    for _ in 0..6 {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        out.push(CODE_ALPHABET[(x as usize) % CODE_ALPHABET.len()] as char);
+    }
+    out
+}
+
+fn identity_path() -> Option<PathBuf> {
+    dirs::config_dir().map(|d| d.join("enigmatic-player").join("identity.key"))
+}
+
+/// The stable per-install secret key. Keeping it across runs means a player's
+/// endpoint id - and therefore its reachability - survives restarts.
+fn load_identity() -> Result<SecretKey, String> {
+    let Some(path) = identity_path() else {
+        return Ok(SecretKey::generate());
+    };
+    if let Ok(text) = std::fs::read_to_string(&path) {
+        if let Some(key) = parse_identity(text.trim()) {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+            }
+            return Ok(key);
+        }
+    }
+    let key = SecretKey::generate();
+    save_identity(&path, &key)?;
+    Ok(key)
+}
+
+fn parse_identity(text: &str) -> Option<SecretKey> {
+    let bytes = unhex(text).ok()?;
+    let bytes: [u8; 32] = bytes.try_into().ok()?;
+    Some(SecretKey::from_bytes(&bytes))
+}
+
+fn save_identity(path: &Path, key: &SecretKey) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+    }
+    let text = format!("{}\n", hex(&key.to_bytes()));
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+            .map_err(|e| format!("cannot save the room identity: {e}"))?;
+        file.write_all(text.as_bytes())
+            .map_err(|e| format!("cannot save the room identity: {e}"))?;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, text).map_err(|e| format!("cannot save the room identity: {e}"))?;
+    }
+    Ok(())
+}
+
+// ---------- invite codec ----------
+
+const INVITE_PREFIX: &str = "EROOM2:";
+const LEGACY_PREFIX: &str = "EROOM1:";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Invite {
+    /// A current invite: the host's iroh endpoint id plus the room code.
+    P2p { endpoint: String, code: String },
+    /// An invite from a version that used a plain TCP relay.
+    Relay { server: String, code: String },
+}
+
+pub fn encode_invite(endpoint: &str, code: &str) -> String {
+    format!("{INVITE_PREFIX}{}:{}", endpoint.trim(), code.to_uppercase())
+}
+
+pub fn decode_invite(text: &str) -> Result<Invite, String> {
+    let text = text.trim();
+    let lower = text.to_lowercase();
+    if lower.starts_with("eroom2:") {
+        let body = &text[INVITE_PREFIX.len()..];
+        let (endpoint, code) = body
+            .split_once(':')
+            .ok_or_else(|| "room invite is incomplete".to_string())?;
+        let endpoint = endpoint.trim().to_string();
+        let code = code.trim().to_uppercase();
+        if endpoint.is_empty() || code.len() < 4 {
+            return Err("room invite is incomplete".into());
+        }
+        PublicKey::from_str(&endpoint)
+            .map_err(|_| "room invite has an invalid host address".to_string())?;
+        return Ok(Invite::P2p { endpoint, code });
+    }
+    if lower.starts_with("eroom1:") {
+        let body = &text[LEGACY_PREFIX.len()..];
+        let (server, code) = body
+            .split_once(':')
+            .ok_or_else(|| "room invite is incomplete".to_string())?;
+        let server = String::from_utf8(unhex(server)?)
+            .map_err(|_| "room invite has an invalid server address".to_string())?;
+        let code = code.trim().to_uppercase();
+        if server.is_empty() || code.len() < 4 {
+            return Err("room invite is incomplete".into());
+        }
+        return Ok(Invite::Relay { server, code });
+    }
+    Err("not a room invite".into())
 }
 
 pub fn looks_like_invite(text: &str) -> bool {
-    let t = text.trim();
-    t.starts_with(INVITE_PREFIX) || t.to_lowercase().starts_with("eroom1:")
+    let t = text.trim().to_lowercase();
+    t.starts_with("eroom2:") || t.starts_with("eroom1:")
 }
 
 fn hex(data: &[u8]) -> String {
@@ -402,7 +856,7 @@ fn hex(data: &[u8]) -> String {
 }
 
 fn unhex(s: &str) -> Result<Vec<u8>, String> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return Err("room invite is cut off".into());
     }
     let mut out = Vec::with_capacity(s.len() / 2);
@@ -423,46 +877,162 @@ fn unhex(s: &str) -> Result<Vec<u8>, String> {
 mod tests {
     use super::*;
     use crate::share::SharedTrack;
-    use std::net::TcpListener;
-    use std::sync::mpsc::Receiver;
+
+    fn sample_endpoint() -> String {
+        SecretKey::generate().public().to_string()
+    }
 
     #[test]
     fn invite_roundtrip() {
-        let invite = encode_invite("192.168.1.20:8080", "ABC234");
-        let (server, code) = decode_invite(&invite).unwrap();
-        assert_eq!(server, "192.168.1.20:8080");
-        assert_eq!(code, "ABC234");
+        let endpoint = sample_endpoint();
+        let invite = encode_invite(&endpoint, "ABC234");
         assert!(looks_like_invite(&invite));
+        assert_eq!(
+            decode_invite(&invite).unwrap(),
+            Invite::P2p {
+                endpoint: endpoint.clone(),
+                code: "ABC234".into()
+            }
+        );
         assert!(!looks_like_invite("ELIST1:abc"));
+    }
+
+    #[test]
+    fn legacy_invite_is_recognised() {
+        let server = "192.168.1.20:8080|203.0.113.7:56789";
+        let invite = format!("EROOM1:{}:ABC234", hex(server.as_bytes()));
+        assert!(looks_like_invite(&invite));
+        assert_eq!(
+            decode_invite(&invite).unwrap(),
+            Invite::Relay {
+                server: server.into(),
+                code: "ABC234".into()
+            }
+        );
     }
 
     #[test]
     fn invite_rejects_junk() {
         assert!(decode_invite("hi").is_err());
+        assert!(decode_invite("EROOM2:not-a-key:ABC").is_err());
+        assert!(decode_invite("EROOM2::ABC").is_err());
         assert!(decode_invite("EROOM1:zz:ABC").is_err());
         assert!(decode_invite("EROOM1:61:ABC").is_err());
     }
 
     #[test]
-    fn invite_keeps_multi_server_addresses() {
-        let multi = "192.168.1.20:8080|203.0.113.7:56789";
-        let invite = encode_invite(multi, "ABC234");
-        assert!(looks_like_invite(&invite));
-        let (server, code) = decode_invite(&invite).unwrap();
-        assert_eq!(server, multi);
-        assert_eq!(code, "ABC234");
+    #[ignore = "needs internet: uses the public iroh relays"]
+    fn p2p_room_roundtrip() {
+        use std::time::{Duration, Instant};
 
-        let opts = server_options(&server);
-        assert_eq!(opts.len(), 2);
-        assert_eq!(opts[0], "192.168.1.20:8080");
-        assert_eq!(opts[1], "203.0.113.7:56789");
-    }
+        let root = std::env::temp_dir().join(format!("enigmatic-p2p-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let host_cfg = root.join("host");
+        let guest_cfg = root.join("guest");
+        std::fs::create_dir_all(&host_cfg).unwrap();
+        std::fs::create_dir_all(&guest_cfg).unwrap();
+        let old_cfg = std::env::var_os("XDG_CONFIG_HOME");
 
-    #[test]
-    fn server_options_dedupes_and_skips_blanks() {
-        let opts = server_options(" a:1 |  | a:1 |b:2|");
-        assert_eq!(opts, vec!["a:1".to_string(), "b:2".to_string()]);
-        assert!(server_options("").is_empty());
+        std::env::set_var("XDG_CONFIG_HOME", &host_cfg);
+        let (htx, hrx) = channel::<Event>();
+        let state = RoomState {
+            label: "smoke".into(),
+            ..Default::default()
+        };
+        let host = create("host", state.clone(), htx).unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(90);
+        let (endpoint, code) = loop {
+            assert!(Instant::now() < deadline, "host never became ready");
+            match hrx.recv_timeout(Duration::from_millis(500)) {
+                Ok(Event::Created {
+                    server,
+                    code,
+                    members,
+                    state,
+                    ..
+                }) => {
+                    assert_eq!(members, vec!["host".to_string()]);
+                    assert_eq!(state.label, "smoke");
+                    break (server, code);
+                }
+                Ok(Event::Error(m)) => panic!("host failed: {m}"),
+                Ok(_) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(e) => panic!("host event channel: {e}"),
+            }
+        };
+
+        std::env::set_var("XDG_CONFIG_HOME", &guest_cfg);
+        let (gtx, grx) = channel::<Event>();
+        let guest = join(&endpoint, "guest", &code, gtx).unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(90);
+        let mut joined = false;
+        while !joined && Instant::now() < deadline {
+            match grx.recv_timeout(Duration::from_millis(500)) {
+                Ok(Event::Joined {
+                    code: got,
+                    host: host_name,
+                    ..
+                }) => {
+                    assert_eq!(got, code);
+                    assert_eq!(host_name, "host");
+                    joined = true;
+                }
+                Ok(Event::Error(m)) => panic!("guest failed: {m}"),
+                Ok(_) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(e) => panic!("guest event channel: {e}"),
+            }
+        }
+        assert!(joined, "guest never joined");
+
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let mut saw_guest = false;
+        while !saw_guest && Instant::now() < deadline {
+            match hrx.recv_timeout(Duration::from_millis(500)) {
+                Ok(Event::Members { members, .. }) => {
+                    saw_guest = members.iter().any(|m| m == "guest");
+                }
+                Ok(_) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(e) => panic!("host event channel: {e}"),
+            }
+        }
+        assert!(saw_guest, "host never saw the guest");
+
+        let updated = RoomState {
+            label: "updated".into(),
+            playing: true,
+            ..state
+        };
+        host.send_state(updated);
+
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let mut synced = false;
+        while !synced && Instant::now() < deadline {
+            match grx.recv_timeout(Duration::from_millis(500)) {
+                Ok(Event::Sync { state, .. }) => {
+                    if state.label == "updated" && state.playing {
+                        synced = true;
+                    }
+                }
+                Ok(_) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(e) => panic!("guest event channel: {e}"),
+            }
+        }
+        assert!(synced, "guest never received the host state");
+
+        guest.leave();
+        host.leave();
+        std::thread::sleep(Duration::from_millis(300));
+        match old_cfg {
+            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+            None => std::env::remove_var("XDG_CONFIG_HOME"),
+        }
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -485,88 +1055,5 @@ mod tests {
         let back: RoomState = serde_json::from_str(&json).unwrap();
         assert_eq!(back.queue[0].title, "Song");
         assert!(back.playing);
-    }
-
-    /// The real client threads (spawn/create/join/leave) against the real
-    /// server: create, follow the invite string, join, sync, leave.
-    #[test]
-    fn client_speaks_to_server() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
-        thread::spawn(move || {
-            let _ = crate::server::serve(listener);
-        });
-        let server = format!("127.0.0.1:{}", addr.port());
-        let st = RoomState {
-            label: "client smoke".into(),
-            queue: vec![SharedTrack {
-                title: "One".into(),
-                artist: "Band".into(),
-                secs: 10.0,
-                url: None,
-                file: Some("one.mp3".into()),
-            }],
-            index: 0,
-            pos: 0.0,
-            playing: false,
-            speed: 1.0,
-        };
-
-        let (etx, erx) = channel::<Event>();
-        let mut host = create(&server, "Host", st.clone(), etx.clone()).unwrap();
-        assert!(host.pending);
-        match erx.recv_timeout(Duration::from_secs(3)).unwrap() {
-            Event::Created { code, .. } => {
-                assert_eq!(code.len(), 8);
-                assert!(code.chars().all(|c| c.is_ascii_digit()));
-                // the app fills these from the event (App::on_room_event)
-                host.code = code;
-                host.pending = false;
-            }
-            other => panic!("host expected Created, got {other:?}"),
-        }
-        assert!(!host.pending);
-        // the invite the user would copy must decode and re-join correctly
-        let (srv, code) = decode_invite(&host.invite()).unwrap();
-        assert_eq!(srv, server);
-
-        let _guest = join(&srv, "Guest", &code, etx).unwrap();
-        let joined = |rx: &Receiver<Event>| -> RoomState {
-            loop {
-                match rx.recv_timeout(Duration::from_secs(3)).unwrap() {
-                    Event::Joined { state, .. } => break state,
-                    Event::Members { .. } => continue,
-                    other => panic!("guest expected Joined, got {other:?}"),
-                }
-            }
-        };
-        let joined_state = joined(&erx);
-        assert_eq!(joined_state.label, "client smoke");
-
-        let mut next = st;
-        next.pos = 7.5;
-        next.playing = true;
-        host.send_state(next);
-        loop {
-            match erx.recv_timeout(Duration::from_secs(3)).unwrap() {
-                Event::Sync { state, .. } => {
-                    assert_eq!(state.pos, 7.5);
-                    assert!(state.playing);
-                    break;
-                }
-                Event::Members { .. } => continue,
-                other => panic!("guest expected Sync, got {other:?}"),
-            }
-        }
-
-        host.leave();
-        loop {
-            match erx.recv_timeout(Duration::from_secs(5)).unwrap() {
-                Event::Error { .. } => { /* host ended the session */ }
-                Event::Closed(_) => break,
-                Event::Members { .. } => continue,
-                other => panic!("guest expected closure, got {other:?}"),
-            }
-        }
     }
 }

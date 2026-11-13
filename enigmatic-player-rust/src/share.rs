@@ -35,6 +35,16 @@ pub fn url_ok(url: &str) -> bool {
     no_space && scheme && !u.chars().any(char::is_control)
 }
 
+/// The bare file name of a path, treating both `/` and `\` as separators so a
+/// Windows path shared from another machine still yields `song.mp3` on Linux.
+fn file_name_of(path: &Path) -> Option<String> {
+    let text = path.to_string_lossy();
+    text.rsplit(['/', '\\'])
+        .next()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+}
+
 impl SharedTrack {
     pub fn from_track(t: &Track) -> SharedTrack {
         SharedTrack {
@@ -44,9 +54,9 @@ impl SharedTrack {
             url: t.url.clone().filter(|u| url_ok(u)),
             file: t
                 .path
-                .as_ref()
-                .and_then(|p| p.file_name())
-                .map(|n| sanitize(&n.to_string_lossy())),
+                .as_deref()
+                .and_then(file_name_of)
+                .map(|n| sanitize(&n)),
         }
     }
 
@@ -100,9 +110,9 @@ pub fn resolve_track(s: &SharedTrack, local: &[Track]) -> Track {
         let file = file.to_lowercase();
         if let Some(t) = local.iter().find(|t| {
             t.path
-                .as_ref()
-                .and_then(|p| p.file_name())
-                .map(|n| n.to_string_lossy().to_lowercase() == file)
+                .as_deref()
+                .and_then(file_name_of)
+                .map(|n| n.to_lowercase() == file)
                 .unwrap_or(false)
         }) {
             return t.clone();

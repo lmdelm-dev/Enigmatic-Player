@@ -3,7 +3,7 @@ mod audio;
 mod beacon;
 mod config;
 mod library;
-mod punch;
+mod lyrics;
 mod playlists;
 mod server;
 mod share;
@@ -30,8 +30,9 @@ fn restore_terminal() {
     let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
 }
 
-/// Sync-server mode: `enigmatic-player --serve [host:port]`.
-/// This binary is either the player or the relay, never both.
+/// Legacy sync-server mode: `enigmatic-player --serve [host:port]`.
+/// Rooms now connect peer-to-peer through iroh, so this is only kept for
+/// anyone still running the old relay by hand.
 fn serve_mode(args: &[String]) -> Option<io::Result<()>> {
     let flag = args.iter().position(|a| a == "--serve" || a == "--server")?;
     let addr = args
@@ -46,7 +47,7 @@ fn main() -> io::Result<()> {
     if args.iter().any(|a| a == "--help" || a == "-h") {
         println!("usage: enigmatic-player [--serve [host:port]]");
         println!("  without flags: the terminal player");
-        println!("  --serve 0.0.0.0:8080: run the listen-together sync relay");
+        println!("  --serve 0.0.0.0:8080: run the legacy listen-together relay");
         return Ok(());
     }
     if let Some(r) = serve_mode(&args) {

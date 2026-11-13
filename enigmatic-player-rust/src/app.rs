@@ -14,14 +14,12 @@ use crate::audio::{self, Engine};
 use crate::beacon;
 use crate::config::{expand, Config};
 use crate::library::{self, Provider, Track};
+use crate::lyrics::{self, Lyrics};
 use crate::playlists::{self, Playlist};
-use crate::punch;
 use crate::share::{self, SharedTrack};
 use crate::stream::{self, Stream};
 use crate::themes::{self, THEMES};
-use crate::together::{self, Event, RoomHandle, RoomState};
-
-use std::net::TcpListener;
+use crate::together::{self, Event, Invite, RoomHandle, RoomState};
 
 pub const REVERBS: [(&str, u32); 5] = [("off", 0), ("room", 25), ("hall", 45), ("cave", 65), ("space", 85)];
 pub const SPEEDS: [f32; 16] = [
@@ -49,6 +47,7 @@ pub enum Mode {
     Share,
     Join,
     Room,
+    Lyrics,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -68,8 +67,7 @@ pub enum Msg {
     Note(u64, String),
     Saved(Result<Track, String>),
     Together(Event),
-    /// The result of the automatic router port-opening run in the background.
-    Reach(punch::Reach),
+    Lyrics { key: String, res: Result<Lyrics, String> },
 }
 
 /// Clickable areas, refreshed on every draw.
@@ -101,6 +99,11 @@ pub struct App {
     pub pl: Vec<Track>,
     pub pl_idx: usize,
     pub now: Option<Track>,
+    pub lyrics: lyrics::State,
+    lyrics_key: String,
+    pub lyrics_follow: bool,
+    /// First visible line in the lyrics popup (used when follow is off).
+    pub lyrics_scroll: usize,
     pub stream: Option<Stream>,
     /// An online track prepared in the background so enter starts fast.
     prefetch: Option<(String, Stream)>,
@@ -153,7 +156,6 @@ pub struct App {
     pub join_err: Option<String>,
     pub room_ads: Vec<beacon::RoomAd>,
     pub room_pick: usize,
-    room_punch: Option<punch::Reach>,
     beacon: Option<beacon::Announcer>,
     beacon_srv: String,
 }
@@ -234,6 +236,10 @@ impl App {
             pl: Vec::new(),
             pl_idx: 0,
             now: None,
+            lyrics: lyrics::State::Idle,
+            lyrics_key: String::new(),
+            lyrics_follow: true,
+            lyrics_scroll: 0,
             stream: None,
             prefetch: None,
             prefetch_want: None,
@@ -283,7 +289,6 @@ impl App {
             join_err: None,
             room_ads: Vec::new(),
             room_pick: 0,
-            room_punch: None,
             beacon: None,
             beacon_srv: String::new(),
         };
@@ -308,9 +313,6 @@ impl App {
             r.leave();
         }
         self.end_beacon();
-        if let Some(reach) = self.room_punch.take() {
-            thread::spawn(move || punch::forget(&reach));
-        }
         self.drop_prefetch();
         self.drop_stream();
         stream::clear_cache();
@@ -571,6 +573,7 @@ impl App {
                 self.now = Some(t);
                 self.playing = true;
                 self.status.clear();
+                self.request_lyrics();
             }
             Err(e) => self.status = format!("cannot play: {e}"),
         }
@@ -615,11 +618,94 @@ impl App {
                 self.stream = Some(s);
                 self.buffering = true;
                 self.status = "buffering ...".into();
+                self.request_lyrics();
             }
             Err(e) => {
                 s.kill.store(true, Ordering::Relaxed);
                 self.status = format!("cannot play: {e}");
             }
+        }
+    }
+
+    // ---------- lyrics ----------
+
+    /// Start loading lyrics for the current track without blocking the UI.
+    fn request_lyrics(&mut self) {
+        let Some(track) = self.now.clone() else {
+            self.lyrics = lyrics::State::Idle;
+            self.lyrics_key.clear();
+            return;
+        };
+        let key = lyrics::key(&track);
+        if key == self.lyrics_key
+            && matches!(self.lyrics, lyrics::State::Loading | lyrics::State::Ready(_))
+        {
+            return;
+        }
+        self.lyrics_key = key.clone();
+        self.lyrics = lyrics::State::Loading;
+        self.lyrics_follow = true;
+        self.lyrics_scroll = 0;
+        let tx = self.tx.clone();
+        thread::spawn(move || {
+            let res = lyrics::load(&track);
+            let _ = tx.send(Msg::Lyrics { key, res });
+        });
+    }
+
+    fn open_lyrics(&mut self) {
+        if self.now.is_none() {
+            self.status = "nothing is playing".into();
+            return;
+        }
+        if matches!(self.lyrics, lyrics::State::Idle) {
+            self.request_lyrics();
+        }
+        self.mode = Mode::Lyrics;
+    }
+
+    fn key_lyrics(&mut self, k: KeyEvent) {
+        match k.code {
+            KeyCode::Esc | KeyCode::Char('y') | KeyCode::Char('q') => self.mode = Mode::Normal,
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.lyrics_follow = false;
+                self.lyrics_scroll = self.lyrics_scroll.saturating_sub(1);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.lyrics_follow = false;
+                self.lyrics_scroll = self.lyrics_scroll.saturating_add(1);
+            }
+            KeyCode::PageUp => {
+                self.lyrics_follow = false;
+                self.lyrics_scroll = self.lyrics_scroll.saturating_sub(10);
+            }
+            KeyCode::PageDown => {
+                self.lyrics_follow = false;
+                self.lyrics_scroll = self.lyrics_scroll.saturating_add(10);
+            }
+            KeyCode::Home => {
+                self.lyrics_follow = false;
+                self.lyrics_scroll = 0;
+            }
+            KeyCode::End => {
+                self.lyrics_follow = false;
+                self.lyrics_scroll = usize::MAX / 2;
+            }
+            KeyCode::Char('f') => {
+                self.lyrics_follow = !self.lyrics_follow;
+                self.status = if self.lyrics_follow {
+                    "lyrics follow the song".into()
+                } else {
+                    "lyrics scrolling is manual".into()
+                };
+            }
+            KeyCode::Char('r') => {
+                self.lyrics_key.clear();
+                self.request_lyrics();
+                self.status = "reloading lyrics ...".into();
+            }
+            KeyCode::Char(' ') => self.toggle_play(),
+            _ => {}
         }
     }
 
@@ -838,7 +924,15 @@ impl App {
                     }
                 }
                 Msg::Together(e) => self.on_room_event(e),
-                Msg::Reach(reach) => self.on_reach(reach),
+                Msg::Lyrics { key, res } => {
+                    if key == self.lyrics_key {
+                        self.lyrics = match res {
+                            Ok(l) => lyrics::State::Ready(l),
+                            Err(e) => lyrics::State::Missing(e),
+                        };
+                        self.lyrics_scroll = 0;
+                    }
+                }
             }
         }
 
@@ -963,6 +1057,7 @@ impl App {
             Mode::Share => self.key_share(k),
             Mode::Join => self.key_join(k),
             Mode::Room => self.key_room(k),
+            Mode::Lyrics => self.key_lyrics(k),
         }
     }
 
@@ -995,6 +1090,7 @@ impl App {
             KeyCode::Char('>') => self.set_wet(self.cfg.wet + 5),
             KeyCode::Char('n') => self.next(1),
             KeyCode::Char('p') => self.prev(),
+            KeyCode::Char('y') => self.open_lyrics(),
             KeyCode::Char('a') => self.begin_add(false),
             KeyCode::Char('A') => self.begin_add(true),
             KeyCode::Char('H') => {
@@ -1284,7 +1380,7 @@ impl App {
         }
     }
 
-    /// `H`: host the current session (queue, or the open playlist) on the sync server.
+    /// `H`: host the current session (queue, or the open playlist) peer-to-peer.
     fn start_hosting(&mut self) {
         if self.room.is_some() {
             self.mode = Mode::Room;
@@ -1334,37 +1430,19 @@ impl App {
         let me = self.display_name();
         let (etx, erx) = channel::<Event>();
         let bridge = self.tx.clone();
-        let bridge2 = bridge.clone();
         thread::spawn(move || {
             while let Ok(e) = erx.recv() {
-                if bridge2.send(Msg::Together(e)).is_err() {
+                if bridge.send(Msg::Together(e)).is_err() {
                     break;
                 }
             }
         });
-        // Where the room's relay lives: a manual one if set (env or config),
-        // otherwise this app hosts it itself and tries to open the router for it.
-        let relay = self.relay_override();
-        let local = match &relay {
-            Some(s) => s.clone(),
-            None => match self.embed_relay(&bridge) {
-                Ok(a) => a,
-                Err(e) => {
-                    self.status = e;
-                    return;
-                }
-            },
-        };
-        match together::create(&local, &me, st.clone(), etx) {
+        match together::create(&me, st.clone(), etx) {
             Ok(h) => {
                 self.room = Some(h);
                 self.room_key.clear();
                 self.room_timer = 0.0;
-                self.status = if relay.is_some() {
-                    format!("creating room on {local} ...")
-                } else {
-                    "room opening here - invite appears when it is live".into()
-                };
+                self.status = "opening an encrypted peer-to-peer room ...".into();
             }
             Err(e) => {
                 self.status = e;
@@ -1375,60 +1453,7 @@ impl App {
         self.mode = Mode::Room;
     }
 
-    /// A manually configured relay, if the user (or env) pinned one.
-    fn relay_override(&self) -> Option<String> {
-        if let Some(s) = crate::config::env_server() {
-            return Some(s);
-        }
-        match self.cfg.server.trim() {
-            "" => None,
-            s => Some(s.to_string()),
-        }
-    }
-
-    /// Hosts the room inside this app: binds the own relay on all interfaces
-    /// and starts the automatic router port-opening in the background.
-    fn embed_relay(&mut self, bridge: &Sender<Msg>) -> Result<String, String> {
-        let listener = TcpListener::bind("0.0.0.0:0").map_err(|e| format!("cannot open a room here: {e}"))?;
-        let addr = listener
-            .local_addr()
-            .map_err(|e| format!("cannot open a room here: {e}"))?;
-        let _ = thread::Builder::new().name("room-relay".into()).spawn(move || {
-            let _ = crate::server::serve(listener);
-        });
-        let tx = bridge.clone();
-        thread::Builder::new()
-            .name("room-punch".into())
-            .spawn(move || {
-                let lan = punch::local_ip();
-                let _ = tx.send(Msg::Reach(punch::open_port(addr.port(), lan)));
-            })
-            .ok();
-        Ok(self_addr(addr.port()))
-    }
-
-    /// Applies the router result to the room and its announce beacon.
-    fn on_reach(&mut self, reach: punch::Reach) {
-        let servers = reach.servers.join("|");
-        self.room_punch = Some(reach);
-        if let Some(h) = self.room.as_mut() {
-            if h.host && !h.pending && !servers.is_empty() {
-                h.server = servers;
-            }
-        }
-        if let Some(r) = &self.room_punch {
-            self.status = if r.servers.len() > 1 {
-                "room is open to the internet - paste the invite to friends anywhere".into()
-            } else if r.servers.is_empty() {
-                format!("room is on this network only ({})", r.note)
-            } else {
-                format!("room ready; {}", r.note)
-            };
-        }
-        self.refresh_beacon();
-    }
-
-    /// Keeps the LAN beacon pointing at the live room (code + addresses).
+    /// Keeps the LAN beacon pointing at the live room (code + endpoint id).
     fn refresh_beacon(&mut self) {
         let want = self
             .room
@@ -1462,9 +1487,6 @@ impl App {
             r.leave();
         }
         self.end_beacon();
-        if let Some(reach) = self.room_punch.take() {
-            thread::spawn(move || punch::forget(&reach));
-        }
         self.room_key.clear();
         self.room_timer = 0.0;
         if self.mode == Mode::Room {
@@ -1492,7 +1514,7 @@ impl App {
                 self.room = Some(h);
                 self.room_key.clear();
                 self.room_timer = 0.0;
-                self.status = format!("joining {code} on {server} ...");
+                self.status = format!("joining {code} over the encrypted room network ...");
                 Ok(())
             }
             Err(e) => Err(e),
@@ -1551,10 +1573,7 @@ impl App {
             Event::Created { server, code, host, members, state } => {
                 if let Some(r) = self.room.as_mut() {
                     r.code = code.clone();
-                    // keep a multi-address list the router work already filled in
-                    if self.room_punch.is_none() {
-                        r.server = server;
-                    }
+                    r.server = server;
                     r.host_name = host;
                     r.members = members;
                     r.state = state;
@@ -1603,9 +1622,6 @@ impl App {
             Event::Closed(m) => {
                 self.room = None;
                 self.end_beacon();
-                if let Some(reach) = self.room_punch.take() {
-                    thread::spawn(move || punch::forget(&reach));
-                }
                 self.room_key.clear();
                 self.room_timer = 0.0;
                 if self.mode == Mode::Room {
@@ -1628,9 +1644,6 @@ impl App {
                         r.leave();
                     }
                     self.end_beacon();
-                    if let Some(reach) = self.room_punch.take() {
-                        thread::spawn(move || punch::forget(&reach));
-                    }
                     self.room_key.clear();
                     self.room_timer = 0.0;
                     if self.mode == Mode::Room {
@@ -1790,7 +1803,7 @@ impl App {
         self.refresh_ads();
         let Some(ad) = self.room_ads.get(self.room_pick).cloned() else {
             self.join_err =
-                Some("nothing heard on this network yet - paste the invite your friend sent (it starts with EROOM1:)".into());
+                Some("nothing heard on this network yet - paste the invite your friend sent (it starts with EROOM2:)".into());
             return;
         };
         let err = match self.join_room(&ad.server, &ad.code) {
@@ -1811,6 +1824,7 @@ impl App {
     fn key_room(&mut self, k: KeyEvent) {
         match k.code {
             KeyCode::Esc => self.mode = Mode::Normal,
+            KeyCode::Char('y') => self.open_lyrics(),
             KeyCode::Enter | KeyCode::Char('c') => {
                 let invite = self.room.as_ref().map(|r| r.invite()).unwrap_or_default();
                 if invite.is_empty() {
@@ -1834,7 +1848,10 @@ impl App {
             self.join_err = Some("paste a playlist share code or a room invite first.".into());
             return;
         }
-        let payload = if !text.starts_with("ELIST1:") && !text.starts_with("EROOM1:") && Path::new(&text).is_file() {
+        let payload = if !text.starts_with("ELIST1:")
+            && !together::looks_like_invite(&text)
+            && Path::new(&text).is_file()
+        {
             match std::fs::read_to_string(&text) {
                 Ok(s) => s.trim().to_string(),
                 Err(e) => {
@@ -1852,11 +1869,16 @@ impl App {
         }
         if together::looks_like_invite(&payload) {
             match together::decode_invite(&payload) {
-                Ok((server, code)) => {
-                    self.join_room(&server, &code).unwrap_or_else(|e| {
+                Ok(Invite::P2p { endpoint, code }) => {
+                    self.join_room(&endpoint, &code).unwrap_or_else(|e| {
                         self.join_err = Some(e.clone());
                         self.status = e;
                     });
+                }
+                Ok(Invite::Relay { .. }) => {
+                    let msg = "that invite is from an older player and its relay no longer exists - ask your friend for a fresh invite (it starts with EROOM2:)".to_string();
+                    self.join_err = Some(msg.clone());
+                    self.status = msg;
                 }
                 Err(e) => {
                     self.join_err = Some(e.clone());
@@ -1871,8 +1893,8 @@ impl App {
             self.join_err = Some("that does not look like a playlist code or a room invite".into());
             return;
         }
-        // A bare code needs an address: check the rooms heard on this network,
-        // then any manually configured relay, and own up if neither exists.
+        // A bare code needs an address: look for the room among those heard on
+        // this network (the beacon carries the host's endpoint id).
         let fresh = beacon::rooms();
         if let Some(ad) = self
             .room_ads
@@ -1889,21 +1911,9 @@ impl App {
             self.mode = Mode::Normal;
             return;
         }
-        match self.relay_override() {
-            Some(s) => {
-                if let Err(e) = self.join_room(&s, &code) {
-                    self.join_err = Some(e.clone());
-                    self.status = e;
-                    return;
-                }
-                self.mode = Mode::Normal;
-            }
-            None => {
-                self.join_err = Some(
-                    "a room code alone has no address - paste the full invite (it starts with EROOM1:), or wait until the room shows up in this list".into(),
-                );
-            }
-        }
+        self.join_err = Some(
+            "a room code alone has no address - paste the full invite (it starts with EROOM2:), or wait until the room shows up in this list".into(),
+        );
     }
 
     /// `import`: resolve the shared list against the local library and add it.
@@ -2119,6 +2129,20 @@ impl App {
     // ---------- mouse ----------
 
     pub fn on_mouse(&mut self, m: MouseEvent) {
+        if self.mode == Mode::Lyrics {
+            match m.kind {
+                MouseEventKind::ScrollUp => {
+                    self.lyrics_follow = false;
+                    self.lyrics_scroll = self.lyrics_scroll.saturating_sub(3);
+                }
+                MouseEventKind::ScrollDown => {
+                    self.lyrics_follow = false;
+                    self.lyrics_scroll = self.lyrics_scroll.saturating_add(3);
+                }
+                _ => {}
+            }
+            return;
+        }
         if self.mode != Mode::Normal && self.mode != Mode::Search {
             return;
         }
@@ -2200,53 +2224,6 @@ impl App {
                     self.sel = idx;
                 }
             }
-        }
-    }
-}
-
-/// The address this app dials to reach its own relay. The relay binds the
-/// wildcard address so guests can reach it, but the wildcard itself is not a
-/// valid destination: Windows refuses to connect to 0.0.0.0.
-fn self_addr(port: u16) -> String {
-    format!("127.0.0.1:{port}")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn own_relay_is_dialled_on_loopback() {
-        // Windows rejects a connection to the unspecified address, so the
-        // hosting path must hand the client a real address.
-        assert_eq!(self_addr(18199), "127.0.0.1:18199");
-        assert!(!self_addr(18199).starts_with("0.0.0.0"));
-    }
-
-    /// The real hosting path: the relay listens on the wildcard address and the
-    /// host client dials loopback. This failed with "cannot reach sync server
-    /// 0.0.0.0:port" before the address was fixed.
-    #[test]
-    fn embedded_relay_is_reachable_on_loopback() {
-        let listener = std::net::TcpListener::bind("0.0.0.0:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        std::thread::spawn(move || {
-            let _ = crate::server::serve(listener);
-        });
-        let (etx, erx) = std::sync::mpsc::channel();
-        let _host = crate::together::create(
-            &self_addr(port),
-            "Host",
-            crate::together::RoomState::default(),
-            etx,
-        )
-        .unwrap();
-        match erx.recv_timeout(std::time::Duration::from_secs(5)) {
-            Ok(crate::together::Event::Created { code, .. }) => {
-                assert_eq!(code.len(), 8);
-                assert!(code.chars().all(|c| c.is_ascii_digit()));
-            }
-            other => panic!("hosting did not create a room: {other:?}"),
         }
     }
 }

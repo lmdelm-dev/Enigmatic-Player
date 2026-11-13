@@ -8,12 +8,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::together::{ClientMsg, RoomState, ServerMsg};
 
-/// Room codes are digits only and 8 characters long: easy to read out, easy
-/// to type on any device. 10^8 combinations is plenty.
-const CODE_ALPHABET: &[u8] = b"0123456789";
-/// Tokens are internal (host/guest identity) - not shown to users.
-const TOKEN_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const CODE_LEN: usize = 8;
+const CODE_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const MAX_MEMBERS: usize = 16;
 
 struct Member {
@@ -242,7 +237,7 @@ fn new_code(map: &HashMap<String, Room>) -> String {
     loop {
         let code: String = new_id()
             .bytes()
-            .take(CODE_LEN)
+            .take(6)
             .map(|b| CODE_ALPHABET[(b as usize) % CODE_ALPHABET.len()] as char)
             .collect();
         if !map.contains_key(&code) {
@@ -260,11 +255,11 @@ fn new_id() -> String {
         ^ (std::process::id() as u64) << 32
         ^ SEQ.fetch_add(1, Ordering::Relaxed).wrapping_mul(0x9E37_79B9_7F4A_7C15);
     let mut out = String::new();
-    for _ in 0..32 {
+    for _ in 0..16 {
         x ^= x << 13;
         x ^= x >> 7;
         x ^= x << 17;
-        out.push(TOKEN_ALPHABET[(x as usize) % TOKEN_ALPHABET.len()] as char);
+        out.push(CODE_ALPHABET[(x as usize) % CODE_ALPHABET.len()] as char);
     }
     out
 }
@@ -450,8 +445,7 @@ mod tests {
         );
         let created = read_until(&mut host_r, "created");
         let code = created["code"].as_str().unwrap().to_string();
-        assert_eq!(code.len(), 8);
-        assert!(code.chars().all(|c| c.is_ascii_digit()));
+        assert_eq!(code.len(), 6);
 
         let (guest, mut guest_r) = connect(addr);
         write(

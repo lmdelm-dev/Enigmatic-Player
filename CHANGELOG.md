@@ -2,34 +2,48 @@
 
 All notable changes to Enigmatic Player are documented here.
 
+## 1.9.0 - 2026-11-13
+
+### Added
+- Synced lyrics popup (`y`) with an LRC parser, plain-lyrics fallback and
+  automatic line following.
+- Lyrics providers: sidecar `.lrc` / `.txt` files, embedded audio tags, a disk
+  cache, and online lookup through [LRCLIB](https://lrclib.net).
+- Online lyrics work for streamed YouTube and SoundCloud tracks, not only
+  local files. `ENIGMATIC_NO_LYRICS_ONLINE=1` disables all network lookups.
+- Listen-together rooms over [iroh](https://iroh.computer): encrypted QUIC
+  peer-to-peer connections, LAN discovery, `EROOM2:` invites and relay
+  fallback without port forwarding.
+
+### Changed
+- The repository now ships only the Rust terminal player. The browser edition,
+  static web assets, Python backend and web hosting configuration were removed.
+- The Windows installer and its build scripts were removed. Build from source
+  with `cargo build --release`.
+- README rebuilt around the lightweight, ad-free YouTube and SoundCloud
+  experience, with screenshots, feature comparison and full key reference.
+
+### Fixed
+- Lyrics no longer require the track to be downloaded before lookup.
+- Online playback starts directly through `yt-dlp` + `ffmpeg` without opening
+  a video page or waiting through pre-roll ads.
+
 ## 1.8.1 - 2026-11-10
 
 ### Fixed
-- Hosting a room failed with `cannot reach sync server 0.0.0.0:port`: the
-  embedded relay listens on the wildcard address, but the host client dialled
-  that same wildcard, which Windows refuses. It now dials loopback.
+- Hosting a room failed when the embedded relay listened on the wildcard
+  address. The host client now dials loopback.
 - The About page shows the real build version instead of a hard-coded one.
-
-### Added
-- Windows installer (`installer/`) that fetches the Visual C++ runtime,
-  ffmpeg and yt-dlp while installing.
 
 ## 1.8.0 - 2026-11-09
 
 ### Added
-- Zero-setup listen-together: the host's app now embeds the room relay, so no
-  separate server process is needed.
-- Automatic router port opening (NAT-PMP first, then UPnP) with an honest
-  reachability note in the room popup; mappings are removed again on leave.
-- LAN room discovery over UDP broadcast: rooms appear in the join window and
-  can be joined with the keyboard, no typing.
-- Multi-address invites: one invite string carries LAN and public addresses.
-- Live probe tooling for the router path, plus a wire-level discovery test.
+- Zero-setup listen-together with an embedded room relay.
+- LAN room discovery over UDP broadcast and multi-address invites.
 
 ### Changed
-- Room codes are now 8 digits, easier to read out and type.
+- Room codes are easier to read out and type.
 - Settings no longer has an "online" tab; hosting is fully embedded.
-- Old `127.0.0.1:8080` config values are migrated to "no manual relay".
 
 ## 1.4.0 - 2026-10-20
 
@@ -51,7 +65,7 @@ All notable changes to Enigmatic Player are documented here.
 ## 1.0.0 - 2026-09-02
 
 ### Added
-- NAT-PMP and UPnP port opening with public-IP discovery (`src/punch.rs`).
+- NAT-PMP and UPnP port opening with public-IP discovery.
 - Unit tests for the wire formats and UPnP descriptor parsing.
 
 ## 0.9.0 - 2026-08-18
